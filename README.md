@@ -2,7 +2,9 @@
 
 Responsive React + Vite implementation inspired by the supplied WMS Rentals reference screens. Includes:
 - Public landing page
-- Dashboard layout with warehouse inventory, rentals, activity and quick actions
+- Dashboard with working warehouse, inventory, stock-movement, order, barcode, report, rental, booking, favorite, message, profile and settings screens
+- Operational forms and lists with create, edit, delete, search, stock adjustment, image uploads for inventory and rental listings, and CSV export actions
+- Title-cased navigation menus and a notification panel for recent stock activity and messages
 - Login page
 - Registration page with client-side required-field and password-match validation
 - Responsive layouts for desktop, tablet and mobile
@@ -38,5 +40,7 @@ You can navigate directly to these URLs or use the links/buttons.
 - Icons use `lucide-react`.
 - Property and warehouse photos currently load from Unsplash URLs, so an internet connection is needed for those images.
 
-## Important: backend is not connected
-Login and registration are front-end demos: they save only the username in browser storage and open a personalized dashboard without calling an API. They do not authenticate credentials or create a server-side account. Inventory, orders, rental bookings, notifications and saved listings are also demo UI and do not persist. Connect these actions to your ASP.NET Core Web API and database before production use. Do not store passwords in browser storage; configure server-side authentication, authorization and validation.
+## Data and authentication
+Operational records and uploaded inventory/listing images are stored in the current browser's `localStorage`. Images are resized in the browser before saving. New installations start with empty inventories, warehouses, orders, rental listings, bookings and messages. Data is not synchronized between browsers or devices and is removed if browser storage is cleared.
+
+The login and registration pages are UI demonstrations, not server-side authentication. They do not verify passwords or create server accounts. Connect the operation screens and account flows to an API and database before production use. Do not store passwords in browser storage; configure server-side authentication, authorization and validation.
