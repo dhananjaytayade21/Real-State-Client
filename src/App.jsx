@@ -1,5 +1,6 @@
 import React, { useState } from 'react'
 import { Link, NavLink, Route, Routes, useNavigate } from 'react-router-dom'
+import ConfirmDialog from './components/ConfirmDialog'
 import {
   ArrowRight, Bell, Box, Boxes, Building2, CalendarDays, ChartNoAxesCombined,
   CheckCircle2, ChevronDown, PanelLeftClose, PanelLeftOpen, CircleHelp, ClipboardList, Clock3,
@@ -471,6 +472,7 @@ function Dashboard() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [openSidebarGroup, setOpenSidebarGroup] = useState(null)
   const [notice, setNotice] = useState('')
+  const [pendingConfirmation, setPendingConfirmation] = useState(null)
   const [userMenuOpen, setUserMenuOpen] = useState(false)
   const [notificationsOpen, setNotificationsOpen] = useState(false)
   const [openCreateForm, setOpenCreateForm] = useState(false)
@@ -591,10 +593,17 @@ function Dashboard() {
   }
   const removeInventoryItem = id => {
     const item = inventory.find(entry => entry.id === id)
-    if (!item || !window.confirm(`Delete ${item.name} and its current stock from inventory?`)) return
-    if (persistInventory(inventory.filter(entry => entry.id !== id))) {
-      setNotice(`${item.name} deleted from inventory.`)
-    }
+    if (!item) return
+    setPendingConfirmation({
+      title: 'Delete inventory item?',
+      message: `Delete ${item.name} and its current stock from inventory? This action cannot be undone.`,
+      confirmLabel: 'Delete item',
+      onConfirm: () => {
+        if (persistInventory(inventory.filter(entry => entry.id !== id))) {
+          setNotice(`${item.name} deleted from inventory.`)
+        }
+      },
+    })
   }
   const saveWarehouse = record => {
     const name = record.name.trim()
@@ -623,6 +632,14 @@ function Dashboard() {
   const logout = () => {
     localStorage.removeItem(usernameStorageKey)
     navigate('/')
+  }
+  const requestLogout = () => {
+    setPendingConfirmation({
+      title: 'Log out?',
+      message: 'Do you want to log out?',
+      confirmLabel: 'Log out',
+      onConfirm: logout,
+    })
   }
   const warehouseFields = [
     { key: 'name', label: 'Warehouse name', required: true },
@@ -696,8 +713,16 @@ function Dashboard() {
   const lowStockItems = inventory.filter(item => item.quantity <= Number(settings.lowStockThreshold))
   const lowStockAlertCount = settings.showNotifications ? lowStockItems.length : 0
   const notificationCount = movements.length + messages.length
-  const removeRecord = (key, records, setRecords) => id => {
-    if (window.confirm('Delete this record?')) deleteRecord(key, records, setRecords, id)
+  const removeRecord = (key, records, setRecords, recordType = 'record') => id => {
+    const record = records.find(item => item.id === id)
+    if (!record) return
+    const recordName = record.name || record.orderNumber || record.customer || record.sku || record.sender || ''
+    setPendingConfirmation({
+      title: `Delete ${recordType.toLowerCase()}?`,
+      message: `Delete ${recordName ? `“${recordName}”` : `this ${recordType.toLowerCase()}`}? This action cannot be undone.`,
+      confirmLabel: `Delete ${recordType.toLowerCase()}`,
+      onConfirm: () => deleteRecord(key, records, setRecords, id),
+    })
   }
   const removeWarehouse = id => {
     const warehouse = warehouses.find(item => item.id === id)
@@ -705,18 +730,25 @@ function Dashboard() {
       setNotice('Move or remove this warehouse’s stock before deleting the warehouse.')
       return
     }
-    removeRecord(operationStorageKeys.warehouses, warehouses, setWarehouses)(id)
+    removeRecord(operationStorageKeys.warehouses, warehouses, setWarehouses, 'warehouse')(id)
   }
   const removeListing = id => {
     if (bookings.some(booking => booking.listingId === id)) {
       setNotice('Cancel or remove this listing’s bookings before deleting the listing.')
       return
     }
-    if (window.confirm('Delete this rental listing?')) {
-      persistCollection(operationStorageKeys.listings, setListings, listings.filter(item => item.id !== id))
-      persistCollection(operationStorageKeys.favorites, setFavorites, favorites.filter(item => item !== id))
-      setNotice('Rental listing deleted.')
-    }
+    const listing = listings.find(item => item.id === id)
+    if (!listing) return
+    setPendingConfirmation({
+      title: 'Delete rental listing?',
+      message: `Delete “${listing.name}”? This action cannot be undone.`,
+      confirmLabel: 'Delete listing',
+      onConfirm: () => {
+        persistCollection(operationStorageKeys.listings, setListings, listings.filter(item => item.id !== id))
+        persistCollection(operationStorageKeys.favorites, setFavorites, favorites.filter(item => item !== id))
+        setNotice('Rental listing deleted.')
+      },
+    })
   }
   const handleQuickAction = label => {
     if (label === 'Add Stock / Receive' && warehouses.length === 0) {
@@ -751,7 +783,7 @@ function Dashboard() {
     setNotice(`${label} opened.`)
   }
   const operation = (title, description, records, fields, storageKey, setRecords, options = {}) =>
-    <OperationPanel key={title} title={title} description={description} records={records} fields={fields} search={query} onSave={record=>saveRecord(storageKey,records,setRecords,record)} onDelete={removeRecord(storageKey,records,setRecords)} {...options}/>
+    <OperationPanel key={title} title={title} description={description} records={records} fields={fields} search={query} onSave={record=>saveRecord(storageKey,records,setRecords,record)} onDelete={removeRecord(storageKey,records,setRecords,title)} {...options}/>
   const searchCollections = [
     { section: 'Inventory', records: inventory, getTitle: item => item.name, getDetails: item => `${item.sku} · ${item.category} · ${item.warehouse} · ${item.quantity} units` },
     { section: 'Stock Movements', records: movements, getTitle: movement => `${movement.type} · ${movement.item || movement.sku}`, getDetails: movement => `${movement.quantity} units · ${movement.warehouse} · ${movement.reference || 'No reference'}` },
@@ -784,14 +816,23 @@ function Dashboard() {
         <div className="side-submenu-flyout-heading"><div><span>WORKSPACE MENU</span><strong>{group.title}</strong></div><button type="button" aria-label={`Close ${group.title} menu`} onClick={() => setOpenSidebarGroup(null)}><X size={15}/></button></div>
         <div className="side-submenu-flyout-options">{group.items.map(item => <button key={item} type="button" onClick={() => {setActive(item);setOpenCreateForm(false);setAddStockOpen(false);setOpenSidebarGroup(null);setMobileNav(false)}} className={active === item ? 'sub-active' : ''}><span>{item}</span>{active === item && <CheckCircle2 size={15}/>}</button>)}</div>
       </div>}</div> : <button type="button" className={`side-link ${active === group.title ? 'side-active' : ''}`} aria-label={sidebarCollapsed ? group.title : undefined} data-tooltip={sidebarCollapsed ? group.title : undefined} onClick={() => {setActive(group.title);setOpenCreateForm(false);setMobileNav(false)}}><group.icon size={19}/><span className="sidebar-label">{group.title}</span></button>}{group.items.length > 0 && <div className="side-submenu" id={submenuId} hidden={!expanded}>{group.items.map(item=><button key={item} title={sidebarCollapsed ? item : undefined} onClick={()=>{setActive(item);setOpenCreateForm(false);setAddStockOpen(false);setOpenSidebarGroup(null);setMobileNav(false)}} className={active===item?'sub-active':''}>• &nbsp; <span className="sidebar-label">{item}</span></button>)}</div>}</div>
-    })}</div><div className="sidebar-bottom"><button className={`side-link ${active === 'Profile' ? 'side-active' : ''}`} aria-label={sidebarCollapsed ? 'Profile' : undefined} data-tooltip={sidebarCollapsed ? 'Profile' : undefined} onClick={() => {setActive('Profile');setOpenSidebarGroup(null);setOpenCreateForm(false);setMobileNav(false)}}><User size={19}/><span className="sidebar-label">Profile</span></button><button className={`side-link ${active === 'Settings' ? 'side-active' : ''}`} aria-label={sidebarCollapsed ? 'Settings' : undefined} data-tooltip={sidebarCollapsed ? 'Settings' : undefined} onClick={() => {setActive('Settings');setOpenSidebarGroup(null);setOpenCreateForm(false);setMobileNav(false)}}><Settings size={19}/><span className="sidebar-label">Settings</span></button><button type="button" className="side-link" aria-label={sidebarCollapsed ? 'Logout' : undefined} data-tooltip={sidebarCollapsed ? 'Logout' : undefined} onClick={() => {setOpenSidebarGroup(null);logout()}}><LogOut size={19}/><span className="sidebar-label">Logout</span></button><div className="sidebar-tag"><Warehouse size={42}/><strong>Smarter Operations.<br/>Better Spaces.</strong></div></div></aside>
-    <main className="dashboard-main"><header className="dash-topbar"><button className="mobile-menu dash-menu" onClick={() => setMobileNav(!mobileNav)} aria-label="Toggle dashboard menu"><Menu/></button><div className="dash-search"><Search size={18}/><input placeholder="Search in this workspace..." value={query} onChange={e=>setQuery(e.target.value)}/></div><button type="button" className="theme-toggle" onClick={toggleTheme} aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`} title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`}>{theme === 'dark' ? <Sun size={18}/> : <Moon size={18}/>}<span>{theme === 'dark' ? 'Light' : 'Dark'}</span></button><div className="notification-menu"><button type="button" className="icon-button" aria-label={`${notificationCount} recent activity and messages`} aria-expanded={notificationsOpen} aria-haspopup="dialog" onClick={()=>setNotificationsOpen(current=>!current)}><Bell/>{notificationCount > 0 && <span className="notification-dot">{notificationCount > 99 ? '99+' : notificationCount}</span>}</button>{notificationsOpen && <div className="notification-popover" role="dialog" aria-label="Recent activity and messages"><section><h3>Recent Activity</h3>{movements.slice(0,4).length ? movements.slice(0,4).map(movement=><button type="button" className="notification-entry" key={movement.id} onClick={()=>{setActive('Stock Movements');setNotificationsOpen(false);setAddStockOpen(false);setOpenCreateForm(false)}}><strong>{movement.type} · {movement.item || movement.sku}</strong><span>{movement.quantity} units · {movement.warehouse}</span><small>{formatRecordDate(movement.createdAt)}</small></button>) : <p className="notification-empty">No recent stock activity.</p>}</section><section><h3>Messages</h3>{messages.slice(0,4).length ? messages.slice(0,4).map(message=><button type="button" className="notification-entry" key={message.id} onClick={()=>{setActive('Messages');setNotificationsOpen(false);setAddStockOpen(false);setOpenCreateForm(false)}}><strong>{message.sender} → {message.recipient}</strong><span>{message.message}</span><small>{formatRecordDate(message.createdAt || message.updatedAt)}</small></button>) : <p className="notification-empty">No messages yet.</p>}<button type="button" className="notification-view-all" onClick={()=>{setActive('Messages');setNotificationsOpen(false);setAddStockOpen(false);setOpenCreateForm(false)}}>Open Messages →</button></section></div>}</div><div className="user-menu"><button type="button" className="user-chip" aria-expanded={userMenuOpen} aria-haspopup="menu" onClick={() => setUserMenuOpen(!userMenuOpen)}><span>{(username || 'U').charAt(0).toUpperCase()}</span><div><strong>{username || 'User'}</strong><small>Account</small></div><ChevronDown size={15}/></button>{userMenuOpen && <div className="user-menu-dropdown" role="menu"><button type="button" role="menuitem" onClick={()=>{setActive('Profile');setOpenSidebarGroup(null);setUserMenuOpen(false)}}><User size={16}/>Profile</button><button type="button" role="menuitem" onClick={()=>{setOpenSidebarGroup(null);logout()}}><LogOut size={16}/>Logout</button></div>}</div></header>
+    })}</div><div className="sidebar-bottom"><button className={`side-link ${active === 'Profile' ? 'side-active' : ''}`} aria-label={sidebarCollapsed ? 'Profile' : undefined} data-tooltip={sidebarCollapsed ? 'Profile' : undefined} onClick={() => {setActive('Profile');setOpenSidebarGroup(null);setOpenCreateForm(false);setMobileNav(false)}}><User size={19}/><span className="sidebar-label">Profile</span></button><button className={`side-link ${active === 'Settings' ? 'side-active' : ''}`} aria-label={sidebarCollapsed ? 'Settings' : undefined} data-tooltip={sidebarCollapsed ? 'Settings' : undefined} onClick={() => {setActive('Settings');setOpenSidebarGroup(null);setOpenCreateForm(false);setMobileNav(false)}}><Settings size={19}/><span className="sidebar-label">Settings</span></button><button type="button" className="side-link"     aria-label={sidebarCollapsed ? 'Logout' : undefined} data-tooltip={sidebarCollapsed ? 'Logout' : undefined} onClick={() => {setOpenSidebarGroup(null);requestLogout()}}><LogOut size={19}/><span className="sidebar-label">Logout</span></button><div className="sidebar-tag"><Warehouse size={42}/><strong>Smarter Operations.<br/>Better Spaces.</strong></div></div></aside>
+    <main className="dashboard-main"><header className="dash-topbar"><button className="mobile-menu dash-menu" onClick={() => setMobileNav(!mobileNav)} aria-label="Toggle dashboard menu"><Menu/></button><div className="dash-search"><Search size={18}/><input placeholder="Search in this workspace..." value={query} onChange={e=>setQuery(e.target.value)}/></div><button type="button" className="theme-toggle" onClick={toggleTheme} aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`} title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`}>{theme === 'dark' ? <Sun size={18}/> : <Moon size={18}/>}<span>{theme === 'dark' ? 'Light' : 'Dark'}</span></button><div className="notification-menu"><button type="button" className="icon-button" aria-label={`${notificationCount} recent activity and messages`} aria-expanded={notificationsOpen} aria-haspopup="dialog" onClick={()=>setNotificationsOpen(current=>!current)}><Bell/>{notificationCount > 0 && <span className="notification-dot">{notificationCount > 99 ? '99+' : notificationCount}</span>}</button>{notificationsOpen && <div className="notification-popover" role="dialog" aria-label="Recent activity and messages"><section><h3>Recent Activity</h3>{movements.slice(0,4).length ? movements.slice(0,4).map(movement=><button type="button" className="notification-entry" key={movement.id} onClick={()=>{setActive('Stock Movements');setNotificationsOpen(false);setAddStockOpen(false);setOpenCreateForm(false)}}><strong>{movement.type} · {movement.item || movement.sku}</strong><span>{movement.quantity} units · {movement.warehouse}</span><small>{formatRecordDate(movement.createdAt)}</small></button>) : <p className="notification-empty">No recent stock activity.</p>}</section><section><h3>Messages</h3>{messages.slice(0,4).length ? messages.slice(0,4).map(message=><button type="button" className="notification-entry" key={message.id} onClick={()=>{setActive('Messages');setNotificationsOpen(false);setAddStockOpen(false);setOpenCreateForm(false)}}><strong>{message.sender} → {message.recipient}</strong><span>{message.message}</span><small>{formatRecordDate(message.createdAt || message.updatedAt)}</small></button>) : <p className="notification-empty">No messages yet.</p>}<button type="button" className="notification-view-all" onClick={()=>{setActive('Messages');setNotificationsOpen(false);setAddStockOpen(false);setOpenCreateForm(false)}}>Open Messages →</button></section></div>}</div><div className="user-menu"><button type="button" className="user-chip" aria-expanded={userMenuOpen} aria-haspopup="menu" onClick={() => setUserMenuOpen(!userMenuOpen)}><span>{(username || 'U').charAt(0).toUpperCase()}</span><div><strong>{username || 'User'}</strong><small>Account</small></div><ChevronDown size={15}/></button>{userMenuOpen && <div className="user-menu-dropdown" role="menu"><button type="button" role="menuitem" onClick={()=>{setActive('Profile');setOpenSidebarGroup(null);setUserMenuOpen(false)}}><User size={16}/>Profile</button>    <button type="button" role="menuitem" onClick={()=>{setOpenSidebarGroup(null);setUserMenuOpen(false);requestLogout()}}><LogOut size={16}/>Logout</button></div>}</div></header>
       {notice && <div className="notice" role="status"><CheckCircle2 size={17}/>{notice}<button aria-label="Dismiss notification" onClick={()=>setNotice('')}><X size={15}/></button></div>}
       {query.trim()
         ? <WorkspaceSearchPanel query={query} collections={searchCollections} onSelect={section => {setActive(section);setQuery('');setAddStockOpen(false);setOpenCreateForm(false)}}/>
         : activeContent}
     </main>
     <aside className="right-rail"><section className="quick-actions"><h3><Settings size={20}/>Quick Actions</h3>{[{label:'Add Stock / Receive',icon:Warehouse,color:'blue'},{label:'Create Order',icon:Package,color:'green'},{label:'Add Rental Listing',icon:House,color:'purple'},{label:'Book Rental',icon:CalendarDays,color:'teal'}].map(action=><button type="button" key={action.label} className={`quick-btn quick-${action.color}`} onClick={()=>handleQuickAction(action.label)}><action.icon size={20}/>{action.label}<ArrowRight size={17}/></button>)}</section><section className="rail-panel"><div className="panel-heading"><h3><Clock3 size={18}/>Recent Stock Activity</h3><button type="button" onClick={()=>setActive('Stock Movements')}>View All →</button></div>{movements.slice(0,4).length ? movements.slice(0,4).map(movement=><div className="activity-row" key={movement.id}><span className="activity-icon activity-blue"><Package size={16}/></span><div><strong>{movement.type}: {movement.sku}</strong><p>{movement.quantity} units · {movement.warehouse}</p></div><small>{movement.createdAt}</small></div>) : <p className="rail-empty">No stock activity recorded.</p>}</section><section className="rail-panel"><div className="panel-heading"><h3><Bell size={18}/>Low Stock Alerts</h3><button type="button" onClick={()=>setActive('Settings')}>Settings →</button></div>{settings.showNotifications && lowStockItems.length ? lowStockItems.slice(0,5).map(item=><div className="notification-row" key={item.id}><span className="activity-icon activity-orange"><CircleHelp size={16}/></span><div><strong>{item.name} · {item.sku}</strong><small>{item.quantity} left in {item.warehouse}</small></div></div>) : <p className="rail-empty">{settings.showNotifications ? 'No low stock alerts.' : 'Low stock alerts are turned off.'}</p>}</section></aside>
+    {pendingConfirmation && <ConfirmDialog
+      {...pendingConfirmation}
+      onCancel={() => setPendingConfirmation(null)}
+      onConfirm={() => {
+        const confirmAction = pendingConfirmation.onConfirm
+        setPendingConfirmation(null)
+        confirmAction()
+      }}
+    />}
   </div>
 }
 
