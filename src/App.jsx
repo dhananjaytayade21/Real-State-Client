@@ -2,9 +2,9 @@ import React, { useState } from 'react'
 import { Link, NavLink, Route, Routes, useNavigate } from 'react-router-dom'
 import {
   ArrowRight, Bell, Box, Boxes, Building2, CalendarDays, ChartNoAxesCombined,
-  CheckCircle2, ChevronDown, ChevronsLeft, ChevronsRight, CircleHelp, ClipboardList, Clock3, Eye,
+  CheckCircle2, ChevronDown, PanelLeftClose, PanelLeftOpen, CircleHelp, ClipboardList, Clock3, Eye,
   EyeOff, Forklift, Heart, House, KeyRound, LayoutDashboard, LockKeyhole,
-  LogOut, Mail, MapPin, Menu, MessageSquare, Package, Phone, Search,
+  LogOut, Mail, MapPin, Menu, MessageSquare, Moon, Package, Phone, Search, Sun,
   Minus, Pencil, Plus, Save, Settings, ShieldCheck, Truck, User, UserRoundPlus, Users, Warehouse,
   X, Barcode, BadgeCheck, FileText
 } from 'lucide-react'
@@ -16,10 +16,12 @@ const officeImage = 'https://images.unsplash.com/photo-1497366754035-f200968a6e7
 const storageImage = 'https://images.unsplash.com/photo-1586864387967-d02ef85d93e8?auto=format&fit=crop&w=1000&q=85'
 const homeImage = 'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=1000&q=85'
 const usernameStorageKey = 'wmsRentalsUsername'
+const themeStorageKey = 'wmsRentalsTheme'
 const profileStorageKeys = {
   name: 'wmsRentalsProfileName',
   email: 'wmsRentalsProfileEmail',
   phone: 'wmsRentalsProfilePhone',
+  address: 'wmsRentalsProfileAddress',
 }
 const inventoryStorageKey = 'wmsRentalsInventory'
 const operationStorageKeys = {
@@ -34,6 +36,7 @@ const operationStorageKeys = {
 }
 const readStoredList = key => JSON.parse(localStorage.getItem(key) || '[]')
 const createId = () => globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`
+const getInventoryImages = item => Array.isArray(item.images) ? item.images : item.image ? [item.image] : []
 const imageFileToDataUrl = file => new Promise((resolve, reject) => {
   if (!file.type.startsWith('image/')) {
     reject(new Error('Choose an image file.'))
@@ -75,8 +78,8 @@ const formatRecordDate = value => {
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString()
 }
 
-function Brand({ light = false }) {
-  return <Link to="/" className={`brand ${light ? 'brand-light' : ''}`}>
+function Brand({ light = false, to = '/', onClick }) {
+  return <Link to={to} onClick={onClick} className={`brand ${light ? 'brand-light' : ''}`}>
     <span className="brand-mark"><Box size={30} strokeWidth={2.7} /></span>
     <span><strong>WMS<span>Rentals</span></strong><small>Store More&nbsp; | &nbsp;Rent Smarter</small></span>
   </Link>
@@ -168,6 +171,7 @@ function ProfilePanel({ profile, onSave }) {
       username: form.username.trim(),
       email: form.email.trim(),
       phone: form.phone.trim(),
+      address: form.address.trim(),
     }
     onSave(updatedProfile)
     setForm(updatedProfile)
@@ -192,65 +196,73 @@ function ProfilePanel({ profile, onSave }) {
         <label>Username<input name="username" value={form.username} onChange={update} autoComplete="username" required/></label>
         <label>Email Address<input name="email" type="email" value={form.email} onChange={update} autoComplete="email"/></label>
         <label>Mobile Number<input name="phone" type="tel" value={form.phone} onChange={update} autoComplete="tel"/></label>
+        <label>Address<textarea name="address" value={form.address} onChange={update} autoComplete="street-address" rows="3"/></label>
         <div className="profile-form-actions"><button type="button" className="btn btn-outline profile-cancel" onClick={cancelEdit}><X size={16}/>Cancel</button><button type="submit" className="btn btn-primary"><Save size={16}/>Save Changes</button></div>
       </form> : <div className="profile-details">
         <div><span><User size={17}/>Full Name</span><strong>{profile.name || 'Not provided'}</strong></div>
         <div><span><User size={17}/>Username</span><strong>{profile.username || 'Not provided'}</strong></div>
         <div><span><Mail size={17}/>Email Address</span><strong>{profile.email || 'Not provided'}</strong></div>
         <div><span><Phone size={17}/>Mobile Number</span><strong>{profile.phone || 'Not provided'}</strong></div>
+        <div><span><MapPin size={17}/>Address</span><strong>{profile.address || 'Not provided'}</strong></div>
       </div>}
     </article>
   </section>
 }
 
-function InventoryPanel({ items, warehouseOptions, search, addStockOpen, onOpenAddStock, onReceiveStock, onCloseAddStock, onUpdateItem, onAdjustQuantity, onCreateWarehouse }) {
-  const emptyForm = () => ({ name: '', sku: '', category: '', warehouse: warehouseOptions[0] || '', quantity: '', image: '' })
+function InventoryImageAttachments({ images, onAdd, onRemove, onError, inputId }) {
+  const [processing, setProcessing] = useState(false)
+  const addFiles = async e => {
+    const files = Array.from(e.target.files || [])
+    e.target.value = ''
+    if (!files.length) return
+    setProcessing(true)
+    try {
+      for (const file of files) {
+        try {
+          onAdd(await imageFileToDataUrl(file))
+        } catch (error) {
+          onError(error.message)
+          break
+        }
+      }
+    } finally {
+      setProcessing(false)
+    }
+  }
+  return <div className="inventory-image-attachments">
+    <input id={inputId} type="file" accept="image/*" multiple onChange={addFiles} disabled={processing}/>
+    <label className="inventory-image-add" htmlFor={inputId}><Plus size={14}/>{processing ? 'Adding photos…' : 'Add photos'}</label>
+    <span className="inventory-image-hint">Choose one or more images; they are added one at a time.</span>
+    {images.length > 0 && <div className="inventory-image-previews">{images.map((image, index) => <div className="inventory-image-preview" key={`${index}-${image.slice(0, 32)}`}>
+      <img src={image} alt={`Item photo ${index + 1}`}/>
+      <button type="button" className="inventory-action-cancel" aria-label={`Remove photo ${index + 1}`} disabled={processing} onClick={() => onRemove(index)}>Remove</button>
+    </div>)}</div>}
+  </div>
+}
+
+function InventoryPanel({ items, warehouseOptions, search, addStockOpen, onOpenAddStock, onReceiveStock, onCloseAddStock, onUpdateItem, onAdjustQuantity, onDeleteItem, onCreateWarehouse }) {
+  const emptyForm = () => ({ name: '', sku: '', category: '', warehouse: warehouseOptions[0] || '', quantity: '', images: [] })
   const [form, setForm] = useState(emptyForm)
   const [editingId, setEditingId] = useState(null)
   const [editForm, setEditForm] = useState(null)
   const [formError, setFormError] = useState('')
+  const normalizedSearch = search.trim().toLowerCase()
   const filteredItems = items.filter(item =>
-    `${item.name} ${item.sku} ${item.category} ${item.warehouse}`.toLowerCase().includes(search.toLowerCase())
+    `${item.name} ${item.sku} ${item.category} ${item.warehouse}`.toLowerCase().includes(normalizedSearch)
   )
   const totalUnits = items.reduce((total, item) => total + item.quantity, 0)
 
-  const update = async e => {
-    const { name, type, files, value } = e.target
-    if (type === 'file') {
-      const file = files?.[0]
-      if (!file) return
-      try {
-        const image = await imageFileToDataUrl(file)
-        setForm(current => ({ ...current, [name]: image }))
-        setFormError('')
-      } catch (error) {
-        setFormError(error.message)
-      }
-      e.target.value = ''
-      return
-    }
+  const update = e => {
+    const { name, value } = e.target
     setForm(current => ({ ...current, [name]: value }))
   }
-  const updateEditForm = async e => {
-    const { name, type, files, value } = e.target
-    if (type === 'file') {
-      const file = files?.[0]
-      if (!file) return
-      try {
-        const image = await imageFileToDataUrl(file)
-        setEditForm(current => ({ ...current, [name]: image }))
-        setFormError('')
-      } catch (error) {
-        setFormError(error.message)
-      }
-      e.target.value = ''
-      return
-    }
+  const updateEditForm = e => {
+    const { name, value } = e.target
     setEditForm(current => ({ ...current, [name]: value }))
   }
   const startEditing = item => {
     setEditingId(item.id)
-    setEditForm({ name: item.name, sku: item.sku, category: item.category, warehouse: item.warehouse, image: item.image || '' })
+    setEditForm({ name: item.name, sku: item.sku, category: item.category, warehouse: item.warehouse, images: getInventoryImages(item) })
   }
   const saveEdit = e => {
     e.preventDefault()
@@ -272,7 +284,7 @@ function InventoryPanel({ items, warehouseOptions, search, addStockOpen, onOpenA
       category: form.category.trim() || 'Uncategorized',
       warehouse: form.warehouse,
       quantity: Number(form.quantity),
-      image: form.image,
+      images: form.images,
     })
     if (saved !== false) {
       setForm(emptyForm())
@@ -299,7 +311,7 @@ function InventoryPanel({ items, warehouseOptions, search, addStockOpen, onOpenA
         <label>Category<input name="category" value={form.category} onChange={update} placeholder="Enter category"/></label>
         <label>Warehouse<select name="warehouse" value={form.warehouse} onChange={update} required disabled={!warehouseOptions.length}><option value="" disabled>Select warehouse</option>{warehouseOptions.map(name=><option key={name}>{name}</option>)}</select></label>
         <label>Quantity received<input name="quantity" type="number" min="1" step="1" value={form.quantity} onChange={update} placeholder="Enter quantity" required/></label>
-        <label>Item image<input name="image" type="file" accept="image/*" onChange={update}/>{form.image && <span className="image-upload-preview"><img src={form.image} alt="Selected item preview"/><button type="button" className="inventory-action-cancel" onClick={()=>setForm(current=>({...current,image:''}))}>Remove image</button></span>}</label>
+        <div className="inventory-form-image-field"><span>Item photos</span><InventoryImageAttachments images={form.images} inputId="new-inventory-images" onAdd={image => {setForm(current => ({...current, images: [...current.images, image]}));setFormError('')}} onRemove={index => {setForm(current => ({...current, images: current.images.filter((_, imageIndex) => imageIndex !== index)}));setFormError('')}} onError={setFormError}/></div>
       </div>
       {formError && <p className="form-message form-error" role="alert">{formError}</p>}
       <div className="inventory-form-actions"><button type="button" className="btn btn-outline inventory-cancel" onClick={onCloseAddStock}>Cancel</button><button type="submit" className="btn btn-primary"><Plus size={16}/>Save Stock</button></div>
@@ -307,7 +319,33 @@ function InventoryPanel({ items, warehouseOptions, search, addStockOpen, onOpenA
     <section className="inventory-table-card">
       <div className="inventory-table-heading"><div><h2>Stock list</h2><p>{filteredItems.length} {filteredItems.length === 1 ? 'item' : 'items'}</p></div><span><Search size={16}/>{search || 'All inventory'}</span></div>
       {formError && !addStockOpen && <p className="form-message form-error" role="alert">{formError}</p>}
-      {filteredItems.length ? <div className="inventory-table-scroll"><table className="inventory-table"><thead><tr><th>Item</th><th>SKU</th><th>Category</th><th>Warehouse</th><th>Quantity</th><th>Updated</th><th>Actions</th></tr></thead><tbody>{filteredItems.map(item=><tr key={item.id}>{editingId === item.id ? <><td><div className="inventory-edit-product"><input className="inventory-edit-input" aria-label="Item name" name="name" value={editForm.name} onChange={updateEditForm} required/><input className="inventory-edit-input" aria-label="Item image" name="image" type="file" accept="image/*" onChange={updateEditForm}/>{editForm.image && <><img className="inventory-item-thumb" src={editForm.image} alt={`${editForm.name} preview`}/><button type="button" className="inventory-action-cancel" onClick={()=>setEditForm(current=>({...current,image:''}))}>Remove image</button></>}</div></td><td><input className="inventory-edit-input" aria-label="SKU" name="sku" value={editForm.sku} onChange={updateEditForm} required/></td><td><input className="inventory-edit-input" aria-label="Category" name="category" value={editForm.category} onChange={updateEditForm}/></td><td><select className="inventory-edit-input" aria-label="Warehouse" name="warehouse" value={editForm.warehouse} onChange={updateEditForm} required>{Array.from(new Set([...warehouseOptions, editForm.warehouse])).filter(Boolean).map(name=><option key={name}>{name}</option>)}</select></td><td><span className="inventory-quantity">{item.quantity.toLocaleString()}</span></td><td>{item.updatedAt}</td><td><form className="inventory-row-actions" onSubmit={saveEdit}><button type="submit" className="inventory-action-save">Save</button><button type="button" className="inventory-action-cancel" onClick={cancelEdit}>Cancel</button></form></td></> : <><td><div className="inventory-product-cell">{item.image && <img className="inventory-item-thumb" src={item.image} alt=""/>}<strong>{item.name}</strong></div></td><td><span className="inventory-sku">{item.sku}</span></td><td>{item.category}</td><td>{item.warehouse}</td><td><div className="inventory-quantity-control"><button type="button" aria-label={`Decrease ${item.name} quantity`} title="Decrease quantity" disabled={item.quantity <= 0} onClick={() => onAdjustQuantity(item.id, -1)}><Minus size={13}/></button><span className="inventory-quantity">{item.quantity.toLocaleString()}</span><button type="button" aria-label={`Increase ${item.name} quantity`} title="Increase quantity" onClick={() => onAdjustQuantity(item.id, 1)}><Plus size={13}/></button></div></td><td>{item.updatedAt}</td><td><button type="button" className="inventory-edit-button" onClick={() => startEditing(item)}><Pencil size={13}/>Edit</button></td></>}</tr>)}</tbody></table></div> : <div className="inventory-empty"><Package size={26}/><strong>No stock items found</strong><p>{search ? 'Try a different search.' : 'Add stock to get your inventory started.'}</p></div>}
+      {filteredItems.length ? <div className="inventory-table-scroll">
+        <table className="inventory-table">
+          <thead><tr><th>Item</th><th>SKU</th><th>Category</th><th>Warehouse</th><th>Quantity</th><th>Updated</th><th>Actions</th></tr></thead>
+          <tbody>{filteredItems.map(item => <tr key={item.id}>
+            {editingId === item.id ? <>
+              <td><div className="inventory-edit-product">
+                <input className="inventory-edit-input" aria-label="Item name" name="name" value={editForm.name} onChange={updateEditForm} required/>
+                <InventoryImageAttachments images={editForm.images} inputId={`edit-inventory-images-${item.id}`} onAdd={image => {setEditForm(current => ({...current, images: [...current.images, image]}));setFormError('')}} onRemove={index => {setEditForm(current => ({...current, images: current.images.filter((_, imageIndex) => imageIndex !== index)}));setFormError('')}} onError={setFormError}/>
+              </div></td>
+              <td><input className="inventory-edit-input" aria-label="SKU" name="sku" value={editForm.sku} onChange={updateEditForm} required/></td>
+              <td><input className="inventory-edit-input" aria-label="Category" name="category" value={editForm.category} onChange={updateEditForm}/></td>
+              <td><select className="inventory-edit-input" aria-label="Warehouse" name="warehouse" value={editForm.warehouse} onChange={updateEditForm} required>{Array.from(new Set([...warehouseOptions, editForm.warehouse])).filter(Boolean).map(name => <option key={name}>{name}</option>)}</select></td>
+              <td><span className="inventory-quantity">{item.quantity.toLocaleString()}</span></td>
+              <td>{item.updatedAt}</td>
+              <td><form className="inventory-row-actions" onSubmit={saveEdit}><button type="submit" className="inventory-action-save">Save</button><button type="button" className="inventory-action-cancel" onClick={cancelEdit}>Cancel</button></form></td>
+            </> : <>
+              <td><div className="inventory-product-cell">{getInventoryImages(item).length > 0 && <span className="inventory-photo-count"><img className="inventory-item-thumb" src={getInventoryImages(item)[0]} alt=""/>{getInventoryImages(item).length > 1 && <small>+{getInventoryImages(item).length - 1}</small>}</span>}<strong>{item.name}</strong></div></td>
+              <td><span className="inventory-sku">{item.sku}</span></td>
+              <td>{item.category}</td>
+              <td>{item.warehouse}</td>
+              <td><div className="inventory-quantity-control"><button type="button" aria-label={`Decrease ${item.name} quantity`} title="Decrease quantity" disabled={item.quantity <= 0} onClick={() => onAdjustQuantity(item.id, -1)}><Minus size={13}/></button><span className="inventory-quantity">{item.quantity.toLocaleString()}</span><button type="button" aria-label={`Increase ${item.name} quantity`} title="Increase quantity" onClick={() => onAdjustQuantity(item.id, 1)}><Plus size={13}/></button></div></td>
+              <td>{item.updatedAt}</td>
+              <td><div className="inventory-row-actions"><button type="button" className="inventory-edit-button" onClick={() => startEditing(item)}><Pencil size={13}/>Edit</button><button type="button" className="inventory-action-cancel" onClick={() => onDeleteItem(item.id)}>Delete</button></div></td>
+            </>}
+          </tr>)}</tbody>
+        </table>
+      </div> : <div className="inventory-empty"><Package size={26}/><strong>No stock items found</strong><p>{search ? 'Try a different search.' : 'Add stock to get your inventory started.'}</p></div>}
     </section>
   </section>
 }
@@ -317,8 +355,9 @@ function OperationPanel({ title, description, records, fields, onSave, onDelete,
   const [editingId, setEditingId] = useState(null)
   const [form, setForm] = useState({})
   const [formError, setFormError] = useState('')
+  const normalizedSearch = search.trim().toLowerCase()
   const filtered = records.filter(record =>
-    fields.map(field => record[field.key]).join(' ').toLowerCase().includes(search.toLowerCase())
+    fields.map(field => record[field.key]).join(' ').toLowerCase().includes(normalizedSearch)
   )
   const blankForm = () => Object.fromEntries(fields.map(field => [field.key, field.defaultValue ?? field.options?.[0]?.value ?? '']))
   const startCreate = () => {
@@ -372,7 +411,19 @@ function OperationPanel({ title, description, records, fields, onSave, onDelete,
     </form>}
     <section className="inventory-table-card">
       <div className="inventory-table-heading"><div><h2>{title} records</h2><p>{filtered.length} {filtered.length === 1 ? 'record' : 'records'}</p></div><span><Search size={16}/>{search || 'All records'}</span></div>
-      {filtered.length ? <div className="inventory-table-scroll"><table className="inventory-table"><thead><tr>{fields.map(field=><th key={field.key}>{field.label}</th>)}{immutable && <th>Recorded</th>}{!immutable && <th>Actions</th>}</tr></thead><tbody>{filtered.map(record=><tr key={record.id}>{fields.map(field=><td key={field.key}>{field.type === 'image' ? record[field.key] ? <img className="inventory-item-thumb" src={record[field.key]} alt={`${record.name || title} image`}/> : '—' : field.options?.find(option=>option.value===record[field.key])?.label || record[field.key] || '—'}</td>)}{immutable && <td>{record.createdAt}</td>}{!immutable && <td><div className="inventory-row-actions">{renderActions?.(record)}<button type="button" className="inventory-edit-button" onClick={()=>startEdit(record)}><Pencil size={13}/>Edit</button><button type="button" className="inventory-action-cancel" onClick={()=>onDelete(record.id)}>Delete</button></div></td>}</tr>)}</tbody></table></div> : <div className="inventory-empty"><ClipboardList size={26}/><strong>{emptyMessage || `No ${title.toLowerCase()} records yet`}</strong><p>Use “{addLabel}” to create your first record.</p></div>}
+      {filtered.length ? <div className="inventory-table-scroll">
+        <table className="inventory-table">
+          <thead><tr>{fields.map(field => <th key={field.key}>{field.label}</th>)}{immutable && <th>Recorded</th>}<th>Actions</th></tr></thead>
+          <tbody>{filtered.map(record => <tr key={record.id}>
+            {fields.map(field => <td key={field.key}>{field.type === 'image' ? record[field.key] ? <img className="inventory-item-thumb" src={record[field.key]} alt={`${record.name || title} image`}/> : '—' : field.options?.find(option => option.value === record[field.key])?.label || record[field.key] || '—'}</td>)}
+            {immutable && <td>{record.createdAt}</td>}
+            <td><div className="inventory-row-actions">
+              {!immutable && <>{renderActions?.(record)}<button type="button" className="inventory-edit-button" onClick={() => startEdit(record)}><Pencil size={13}/>Edit</button></>}
+              <button type="button" className="inventory-action-cancel" onClick={() => onDelete(record.id)}>Delete</button>
+            </div></td>
+          </tr>)}</tbody>
+        </table>
+      </div> : <div className="inventory-empty"><ClipboardList size={26}/><strong>{emptyMessage || `No ${title.toLowerCase()} records yet`}</strong><p>Use “{addLabel}” to create your first record.</p></div>}
     </section>
   </section>
 }
@@ -384,7 +435,8 @@ function BarcodePanel({ inventory, onAdjustQuantity, search }) {
     e.preventDefault()
     setScanned(inventory.find(item => item.sku.toLowerCase() === code.trim().toLowerCase()) || false)
   }
-  const filtered = inventory.filter(item => `${item.name} ${item.sku} ${item.warehouse}`.toLowerCase().includes(search.toLowerCase()))
+  const normalizedSearch = search.trim().toLowerCase()
+  const filtered = inventory.filter(item => `${item.name} ${item.sku} ${item.warehouse}`.toLowerCase().includes(normalizedSearch))
   return <section className="operation-page">
     <div className="operation-heading"><div><span className="eyebrow blue-text">WAREHOUSE MANAGEMENT</span><h1>Barcode / RFID</h1><p>Look up a stock item by SKU or barcode and adjust its on-hand quantity.</p></div></div>
     <form className="barcode-lookup" onSubmit={lookup}><label htmlFor="barcode-code"><Barcode size={20}/>Scan or enter item SKU</label><div><input id="barcode-code" value={code} onChange={e=>setCode(e.target.value)} placeholder="Enter or scan a SKU" required autoFocus/><button className="btn btn-primary" type="submit"><Search size={15}/>Find item</button></div></form>
@@ -452,6 +504,31 @@ function DashboardOverview({ username, inventory, warehouses, listings, bookings
   </>
 }
 
+function WorkspaceSearchPanel({ query, collections, onSelect }) {
+  const normalizedQuery = query.trim().toLowerCase()
+  const results = collections.flatMap(collection => collection.records
+    .filter(record => Object.entries(record)
+      .filter(([key, value]) => key !== 'id' && key !== 'image' && (typeof value === 'string' || typeof value === 'number'))
+      .some(([, value]) => String(value).toLowerCase().includes(normalizedQuery)))
+    .map(record => ({
+      id: `${collection.section}-${record.id}`,
+      section: collection.section,
+      title: collection.getTitle(record),
+      details: collection.getDetails(record),
+    })))
+
+  return <section className="operation-page workspace-search-page">
+    <div className="operation-heading"><div><span className="eyebrow blue-text">WORKSPACE</span><h1>Search results</h1><p>Matches across inventory, warehouse operations, rentals, and messages.</p></div></div>
+    <section className="inventory-table-card">
+      <div className="inventory-table-heading"><div><h2>Results for “{query.trim()}”</h2><p>{results.length} {results.length === 1 ? 'match' : 'matches'}</p></div><Search size={18}/></div>
+      {results.length ? <div className="workspace-search-results">{results.map(result => <article className="workspace-search-result" key={result.id}>
+        <div><span>{result.section}</span><strong>{result.title || 'Untitled record'}</strong><p>{result.details}</p></div>
+        <button type="button" className="inventory-edit-button" onClick={() => onSelect(result.section)}>Open</button>
+      </article>)}</div> : <div className="inventory-empty"><Search size={26}/><strong>No matches found</strong><p>Try another name, SKU, status, location, or detail.</p></div>}
+    </section>
+  </section>
+}
+
 function Dashboard() {
   const [active, setActive] = useState('Dashboard')
   const [expandedGroups, setExpandedGroups] = useState({
@@ -459,9 +536,11 @@ function Dashboard() {
     'Rental Portal': true,
   })
   const [query, setQuery] = useState('')
+  const [theme, setTheme] = useState(() => localStorage.getItem(themeStorageKey) === 'dark' ? 'dark' : 'light')
   const [addStockOpen, setAddStockOpen] = useState(false)
   const [mobileNav, setMobileNav] = useState(false)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
+  const [openSidebarGroup, setOpenSidebarGroup] = useState(null)
   const [notice, setNotice] = useState('')
   const [userMenuOpen, setUserMenuOpen] = useState(false)
   const [notificationsOpen, setNotificationsOpen] = useState(false)
@@ -472,6 +551,7 @@ function Dashboard() {
     username: localStorage.getItem(usernameStorageKey) || '',
     email: localStorage.getItem(profileStorageKeys.email) || '',
     phone: localStorage.getItem(profileStorageKeys.phone) || '',
+    address: localStorage.getItem(profileStorageKeys.address) || '',
   }))
   const [inventory, setInventory] = useState(() => {
     return readStoredList(inventoryStorageKey)
@@ -488,11 +568,17 @@ function Dashboard() {
   const toggleMenuGroup = title => {
     setExpandedGroups(current => ({ ...current, [title]: !current[title] }))
   }
+  const toggleTheme = () => {
+    const nextTheme = theme === 'dark' ? 'light' : 'dark'
+    localStorage.setItem(themeStorageKey, nextTheme)
+    setTheme(nextTheme)
+  }
   const saveProfile = updatedProfile => {
     localStorage.setItem(usernameStorageKey, updatedProfile.username)
     localStorage.setItem(profileStorageKeys.name, updatedProfile.name)
     localStorage.setItem(profileStorageKeys.email, updatedProfile.email)
     localStorage.setItem(profileStorageKeys.phone, updatedProfile.phone)
+    localStorage.setItem(profileStorageKeys.address, updatedProfile.address)
     setUsername(updatedProfile.username)
     setProfile(updatedProfile)
   }
@@ -546,7 +632,7 @@ function Dashboard() {
     )
     const updatedInventory = existingStock
       ? inventory.map(item => item.id === existingStock.id
-        ? { ...item, quantity: item.quantity + stock.quantity, image: stock.image || item.image, updatedAt: 'Just now' }
+        ? { ...item, quantity: item.quantity + stock.quantity, images: [...getInventoryImages(item), ...(stock.images || [])], updatedAt: 'Just now' }
         : item)
       : [{ ...stock, id: createId(), updatedAt: 'Just now' }, ...inventory]
     if (!persistInventory(updatedInventory)) return false
@@ -573,6 +659,13 @@ function Dashboard() {
     if (!persistInventory(updatedInventory)) return false
     setNotice(`${changes.name} details updated.`)
     return true
+  }
+  const removeInventoryItem = id => {
+    const item = inventory.find(entry => entry.id === id)
+    if (!item || !window.confirm(`Delete ${item.name} and its current stock from inventory?`)) return
+    if (persistInventory(inventory.filter(entry => entry.id !== id))) {
+      setNotice(`${item.name} deleted from inventory.`)
+    }
   }
   const saveWarehouse = record => {
     const name = record.name.trim()
@@ -730,10 +823,19 @@ function Dashboard() {
   }
   const operation = (title, description, records, fields, storageKey, setRecords, options = {}) =>
     <OperationPanel key={title} title={title} description={description} records={records} fields={fields} search={query} onSave={record=>saveRecord(storageKey,records,setRecords,record)} onDelete={removeRecord(storageKey,records,setRecords)} {...options}/>
+  const searchCollections = [
+    { section: 'Inventory', records: inventory, getTitle: item => item.name, getDetails: item => `${item.sku} · ${item.category} · ${item.warehouse} · ${item.quantity} units` },
+    { section: 'Stock Movements', records: movements, getTitle: movement => `${movement.type} · ${movement.item || movement.sku}`, getDetails: movement => `${movement.quantity} units · ${movement.warehouse} · ${movement.reference || 'No reference'}` },
+    { section: 'Warehouses', records: warehouses, getTitle: warehouse => warehouse.name, getDetails: warehouse => `${warehouse.location} · Capacity ${warehouse.capacity}` },
+    { section: 'Orders', records: orders, getTitle: order => order.orderNumber, getDetails: order => `${order.sku} · ${order.quantity} units · ${order.status}` },
+    { section: 'Browse Rentals', records: listings, getTitle: listing => listing.name, getDetails: listing => `${listing.type} · ${listing.city} · ${listing.price}` },
+    { section: 'My Bookings', records: bookings, getTitle: booking => booking.customer, getDetails: booking => `${booking.status} · ${booking.startDate}` },
+    { section: 'Messages', records: messages, getTitle: message => `${message.sender} → ${message.recipient}`, getDetails: message => message.message },
+  ]
   let activeContent
   if (active === 'Profile') activeContent = <ProfilePanel profile={profile} onSave={saveProfile}/>
   else if (active === 'Settings') activeContent = <SettingsPanel settings={settings} onSave={saveSettings}/>
-  else if (active === 'Inventory') activeContent = <InventoryPanel items={inventory} warehouseOptions={warehouses.map(item=>item.name)} search={query} addStockOpen={addStockOpen} onOpenAddStock={() => setAddStockOpen(true)} onReceiveStock={addStock} onCloseAddStock={() => setAddStockOpen(false)} onUpdateItem={saveInventoryItem} onAdjustQuantity={adjustInventoryQuantity} onCreateWarehouse={()=>{setActive('Warehouses');setAddStockOpen(false)}}/>
+  else if (active === 'Inventory') activeContent = <InventoryPanel items={inventory} warehouseOptions={warehouses.map(item=>item.name)} search={query} addStockOpen={addStockOpen} onOpenAddStock={() => setAddStockOpen(true)} onReceiveStock={addStock} onCloseAddStock={() => setAddStockOpen(false)} onUpdateItem={saveInventoryItem} onAdjustQuantity={adjustInventoryQuantity} onDeleteItem={removeInventoryItem} onCreateWarehouse={()=>{setActive('Warehouses');setAddStockOpen(false)}}/>
   else if (active === 'Warehouses') activeContent = operation('Warehouses', 'Create and manage the locations where your stock is stored.', warehouses, warehouseFields, operationStorageKeys.warehouses, setWarehouses, { addLabel: 'Add warehouse', autoOpen: openCreateForm, onSave: saveWarehouse, onDelete: removeWarehouse })
   else if (active === 'Stock Movements') activeContent = operation('Stock Movements', 'Record stock receipts and issues. Each movement updates on-hand inventory.', movements, movementFields, operationStorageKeys.movements, setMovements, { addLabel: 'Record movement', autoOpen: openCreateForm, disableAdd: !inventory.length, onSave: handleMovementSave, immutable: true })
   else if (active === 'Orders') activeContent = operation('Orders', 'Create and track warehouse orders against existing inventory items.', orders, orderFields, operationStorageKeys.orders, setOrders, { addLabel: 'Create order', autoOpen: openCreateForm, disableAdd: !inventory.length })
@@ -744,15 +846,21 @@ function Dashboard() {
   else if (active === 'Favorites') activeContent = <FavoritesPanel listings={listings} favoriteIds={favorites} onToggleFavorite={toggleFavorite}/>
   else if (active === 'Messages') activeContent = operation('Messages', 'Keep notes and message records for your rental conversations.', messages, messageFields, operationStorageKeys.messages, setMessages, { addLabel: 'New message', autoOpen: openCreateForm })
   else activeContent = <DashboardOverview username={username} inventory={inventory} warehouses={warehouses} listings={listings} bookings={bookings} movements={movements} lowStockItems={lowStockItems} onNavigate={page=>{setActive(page);setOpenCreateForm(false);setAddStockOpen(false)}} onQuickAction={handleQuickAction}/>
-  return <div className={`dashboard-layout ${sidebarCollapsed ? 'sidebar-collapsed' : ''} ${settings.density === 'compact' ? 'dashboard-compact' : ''}`}>
-    <aside className={`sidebar ${mobileNav ? 'sidebar-open' : ''}`}><div className="sidebar-heading"><Brand light/><button type="button" className="sidebar-collapse" aria-label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'} title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'} aria-pressed={sidebarCollapsed} onClick={() => setSidebarCollapsed(!sidebarCollapsed)}>{sidebarCollapsed ? <ChevronsRight size={18}/> : <ChevronsLeft size={18}/>}</button></div><div className="sidebar-menu">{menuGroups.map(group => {
+  return <div className={`dashboard-layout ${sidebarCollapsed ? 'sidebar-collapsed' : ''} ${settings.density === 'compact' ? 'dashboard-compact' : ''} ${theme === 'dark' ? 'theme-dark' : ''}`}>
+    <aside className={`sidebar ${mobileNav ? 'sidebar-open' : ''}`}><div className="sidebar-heading"><Brand light to="/dashboard" onClick={() => {setActive('Dashboard');setQuery('');setAddStockOpen(false);setOpenCreateForm(false);setOpenSidebarGroup(null);setMobileNav(false)}}/><button type="button" className="sidebar-collapse" aria-label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'} title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'} data-tooltip={sidebarCollapsed ? 'Expand sidebar' : undefined} aria-pressed={sidebarCollapsed} onClick={() => {setSidebarCollapsed(current => !current);setOpenSidebarGroup(null)}}>{sidebarCollapsed ? <PanelLeftOpen size={17}/> : <PanelLeftClose size={17}/>}</button></div><div className="sidebar-menu">{menuGroups.map(group => {
       const expanded = Boolean(expandedGroups[group.title])
+      const flyoutOpen = sidebarCollapsed && openSidebarGroup === group.title
       const submenuId = `submenu-${group.title.toLowerCase().replace(/\s+/g, '-')}`
-      return <div key={group.title}>{group.items.length > 0 ? <div className={`side-group-header ${active === group.title ? 'side-group-active' : ''}`}><button type="button" className="side-link" title={sidebarCollapsed ? group.title : undefined} onClick={() => {setActive(group.items[0]);setOpenCreateForm(false);setAddStockOpen(false);setMobileNav(false)}}><group.icon size={19}/><span className="sidebar-label">{group.title}</span></button><button type="button" className="side-group-toggle" aria-label={`${expanded ? 'Collapse' : 'Expand'} ${group.title}`} aria-expanded={expanded} aria-controls={submenuId} title={`${expanded ? 'Collapse' : 'Expand'} ${group.title}`} onClick={() => toggleMenuGroup(group.title)}><ChevronDown size={15} className={`side-chevron ${expanded ? 'side-chevron-open' : ''}`}/></button></div> : <button type="button" className={`side-link ${active === group.title ? 'side-active' : ''}`} title={sidebarCollapsed ? group.title : undefined} onClick={() => {setActive(group.title);setOpenCreateForm(false);setMobileNav(false)}}><group.icon size={19}/><span className="sidebar-label">{group.title}</span></button>}{group.items.length > 0 && <div className="side-submenu" id={submenuId} hidden={!expanded}>{group.items.map(item => <button key={item} title={sidebarCollapsed ? item : undefined} onClick={() => {setActive(item);setOpenCreateForm(false);setAddStockOpen(false);setMobileNav(false)}} className={active === item ? 'sub-active' : ''}>• &nbsp; <span className="sidebar-label">{item}</span></button>)}</div>}</div>
-    })}</div><div className="sidebar-bottom"><button className={`side-link ${active === 'Profile' ? 'side-active' : ''}`} title={sidebarCollapsed ? 'Profile' : undefined} onClick={() => {setActive('Profile');setOpenCreateForm(false);setMobileNav(false)}}><User size={19}/><span className="sidebar-label">Profile</span></button><button className={`side-link ${active === 'Settings' ? 'side-active' : ''}`} title={sidebarCollapsed ? 'Settings' : undefined} onClick={() => {setActive('Settings');setOpenCreateForm(false);setMobileNav(false)}}><Settings size={19}/><span className="sidebar-label">Settings</span></button><button type="button" className="side-link" title={sidebarCollapsed ? 'Logout' : undefined} onClick={logout}><LogOut size={19}/><span className="sidebar-label">Logout</span></button><div className="sidebar-tag"><Warehouse size={42}/><strong>Smarter Operations.<br/>Better Spaces.</strong></div></div></aside>
-    <main className="dashboard-main"><header className="dash-topbar"><button className="mobile-menu dash-menu" onClick={() => setMobileNav(!mobileNav)} aria-label="Toggle dashboard menu"><Menu/></button><div className="dash-search"><Search size={18}/><input placeholder="Search in this workspace..." value={query} onChange={e=>setQuery(e.target.value)}/></div><div className="notification-menu"><button type="button" className="icon-button" aria-label={`${notificationCount} recent activity and messages`} aria-expanded={notificationsOpen} aria-haspopup="dialog" onClick={()=>setNotificationsOpen(current=>!current)}><Bell/>{notificationCount > 0 && <span className="notification-dot">{notificationCount > 99 ? '99+' : notificationCount}</span>}</button>{notificationsOpen && <div className="notification-popover" role="dialog" aria-label="Recent activity and messages"><section><h3>Recent Activity</h3>{movements.slice(0,4).length ? movements.slice(0,4).map(movement=><button type="button" className="notification-entry" key={movement.id} onClick={()=>{setActive('Stock Movements');setNotificationsOpen(false);setAddStockOpen(false);setOpenCreateForm(false)}}><strong>{movement.type} · {movement.item || movement.sku}</strong><span>{movement.quantity} units · {movement.warehouse}</span><small>{formatRecordDate(movement.createdAt)}</small></button>) : <p className="notification-empty">No recent stock activity.</p>}</section><section><h3>Messages</h3>{messages.slice(0,4).length ? messages.slice(0,4).map(message=><button type="button" className="notification-entry" key={message.id} onClick={()=>{setActive('Messages');setNotificationsOpen(false);setAddStockOpen(false);setOpenCreateForm(false)}}><strong>{message.sender} → {message.recipient}</strong><span>{message.message}</span><small>{formatRecordDate(message.createdAt || message.updatedAt)}</small></button>) : <p className="notification-empty">No messages yet.</p>}<button type="button" className="notification-view-all" onClick={()=>{setActive('Messages');setNotificationsOpen(false);setAddStockOpen(false);setOpenCreateForm(false)}}>Open Messages →</button></section></div>}</div><div className="user-menu"><button type="button" className="user-chip" aria-expanded={userMenuOpen} aria-haspopup="menu" onClick={() => setUserMenuOpen(!userMenuOpen)}><span>{(username || 'U').charAt(0).toUpperCase()}</span><div><strong>{username || 'User'}</strong><small>Account</small></div><ChevronDown size={15}/></button>{userMenuOpen && <div className="user-menu-dropdown" role="menu"><button type="button" role="menuitem" onClick={()=>{setActive('Profile');setUserMenuOpen(false)}}><User size={16}/>Profile</button><button type="button" role="menuitem" onClick={logout}><LogOut size={16}/>Logout</button></div>}</div></header>
+      return <div key={group.title}>{group.items.length > 0 ? <div className={`side-group-header ${active === group.title ? 'side-group-active' : ''}`}><button type="button" className="side-link" aria-label={sidebarCollapsed ? group.title : undefined} data-tooltip={sidebarCollapsed && !flyoutOpen ? group.title : undefined} aria-expanded={sidebarCollapsed ? flyoutOpen : expanded} aria-controls={sidebarCollapsed ? `flyout-${submenuId}` : submenuId} onClick={() => {if (sidebarCollapsed) setOpenSidebarGroup(current => current === group.title ? null : group.title);else {setActive(group.items[0]);setOpenCreateForm(false);setAddStockOpen(false);setMobileNav(false)}}}><group.icon size={19}/><span className="sidebar-label">{group.title}</span></button><button type="button" className="side-group-toggle" aria-label={`${expanded ? 'Collapse' : 'Expand'} ${group.title}`} aria-expanded={expanded} aria-controls={submenuId} title={`${expanded ? 'Collapse' : 'Expand'} ${group.title}`} onClick={() => toggleMenuGroup(group.title)}><ChevronDown size={15} className={`side-chevron ${expanded ? 'side-chevron-open' : ''}`}/></button>{flyoutOpen && <div className="side-submenu-flyout" id={`flyout-${submenuId}`} aria-label={`${group.title} menu`}>
+        <div className="side-submenu-flyout-heading"><div><span>WORKSPACE MENU</span><strong>{group.title}</strong></div><button type="button" aria-label={`Close ${group.title} menu`} onClick={() => setOpenSidebarGroup(null)}><X size={15}/></button></div>
+        <div className="side-submenu-flyout-options">{group.items.map(item => <button key={item} type="button" onClick={() => {setActive(item);setOpenCreateForm(false);setAddStockOpen(false);setOpenSidebarGroup(null);setMobileNav(false)}} className={active === item ? 'sub-active' : ''}><span>{item}</span>{active === item && <CheckCircle2 size={15}/>}</button>)}</div>
+      </div>}</div> : <button type="button" className={`side-link ${active === group.title ? 'side-active' : ''}`} aria-label={sidebarCollapsed ? group.title : undefined} data-tooltip={sidebarCollapsed ? group.title : undefined} onClick={() => {setActive(group.title);setOpenCreateForm(false);setMobileNav(false)}}><group.icon size={19}/><span className="sidebar-label">{group.title}</span></button>}{group.items.length > 0 && <div className="side-submenu" id={submenuId} hidden={!expanded}>{group.items.map(item=><button key={item} title={sidebarCollapsed ? item : undefined} onClick={()=>{setActive(item);setOpenCreateForm(false);setAddStockOpen(false);setOpenSidebarGroup(null);setMobileNav(false)}} className={active===item?'sub-active':''}>• &nbsp; <span className="sidebar-label">{item}</span></button>)}</div>}</div>
+    })}</div><div className="sidebar-bottom"><button className={`side-link ${active === 'Profile' ? 'side-active' : ''}`} aria-label={sidebarCollapsed ? 'Profile' : undefined} data-tooltip={sidebarCollapsed ? 'Profile' : undefined} onClick={() => {setActive('Profile');setOpenSidebarGroup(null);setOpenCreateForm(false);setMobileNav(false)}}><User size={19}/><span className="sidebar-label">Profile</span></button><button className={`side-link ${active === 'Settings' ? 'side-active' : ''}`} aria-label={sidebarCollapsed ? 'Settings' : undefined} data-tooltip={sidebarCollapsed ? 'Settings' : undefined} onClick={() => {setActive('Settings');setOpenSidebarGroup(null);setOpenCreateForm(false);setMobileNav(false)}}><Settings size={19}/><span className="sidebar-label">Settings</span></button><button type="button" className="side-link" aria-label={sidebarCollapsed ? 'Logout' : undefined} data-tooltip={sidebarCollapsed ? 'Logout' : undefined} onClick={() => {setOpenSidebarGroup(null);logout()}}><LogOut size={19}/><span className="sidebar-label">Logout</span></button><div className="sidebar-tag"><Warehouse size={42}/><strong>Smarter Operations.<br/>Better Spaces.</strong></div></div></aside>
+    <main className="dashboard-main"><header className="dash-topbar"><button className="mobile-menu dash-menu" onClick={() => setMobileNav(!mobileNav)} aria-label="Toggle dashboard menu"><Menu/></button><div className="dash-search"><Search size={18}/><input placeholder="Search in this workspace..." value={query} onChange={e=>setQuery(e.target.value)}/></div><button type="button" className="theme-toggle" onClick={toggleTheme} aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`} title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`}>{theme === 'dark' ? <Sun size={18}/> : <Moon size={18}/>}<span>{theme === 'dark' ? 'Light' : 'Dark'}</span></button><div className="notification-menu"><button type="button" className="icon-button" aria-label={`${notificationCount} recent activity and messages`} aria-expanded={notificationsOpen} aria-haspopup="dialog" onClick={()=>setNotificationsOpen(current=>!current)}><Bell/>{notificationCount > 0 && <span className="notification-dot">{notificationCount > 99 ? '99+' : notificationCount}</span>}</button>{notificationsOpen && <div className="notification-popover" role="dialog" aria-label="Recent activity and messages"><section><h3>Recent Activity</h3>{movements.slice(0,4).length ? movements.slice(0,4).map(movement=><button type="button" className="notification-entry" key={movement.id} onClick={()=>{setActive('Stock Movements');setNotificationsOpen(false);setAddStockOpen(false);setOpenCreateForm(false)}}><strong>{movement.type} · {movement.item || movement.sku}</strong><span>{movement.quantity} units · {movement.warehouse}</span><small>{formatRecordDate(movement.createdAt)}</small></button>) : <p className="notification-empty">No recent stock activity.</p>}</section><section><h3>Messages</h3>{messages.slice(0,4).length ? messages.slice(0,4).map(message=><button type="button" className="notification-entry" key={message.id} onClick={()=>{setActive('Messages');setNotificationsOpen(false);setAddStockOpen(false);setOpenCreateForm(false)}}><strong>{message.sender} → {message.recipient}</strong><span>{message.message}</span><small>{formatRecordDate(message.createdAt || message.updatedAt)}</small></button>) : <p className="notification-empty">No messages yet.</p>}<button type="button" className="notification-view-all" onClick={()=>{setActive('Messages');setNotificationsOpen(false);setAddStockOpen(false);setOpenCreateForm(false)}}>Open Messages →</button></section></div>}</div><div className="user-menu"><button type="button" className="user-chip" aria-expanded={userMenuOpen} aria-haspopup="menu" onClick={() => setUserMenuOpen(!userMenuOpen)}><span>{(username || 'U').charAt(0).toUpperCase()}</span><div><strong>{username || 'User'}</strong><small>Account</small></div><ChevronDown size={15}/></button>{userMenuOpen && <div className="user-menu-dropdown" role="menu"><button type="button" role="menuitem" onClick={()=>{setActive('Profile');setOpenSidebarGroup(null);setUserMenuOpen(false)}}><User size={16}/>Profile</button><button type="button" role="menuitem" onClick={()=>{setOpenSidebarGroup(null);logout()}}><LogOut size={16}/>Logout</button></div>}</div></header>
       {notice && <div className="notice" role="status"><CheckCircle2 size={17}/>{notice}<button aria-label="Dismiss notification" onClick={()=>setNotice('')}><X size={15}/></button></div>}
-      {activeContent}
+      {query.trim()
+        ? <WorkspaceSearchPanel query={query} collections={searchCollections} onSelect={section => {setActive(section);setQuery('');setAddStockOpen(false);setOpenCreateForm(false)}}/>
+        : activeContent}
     </main>
     <aside className="right-rail"><section className="quick-actions"><h3><Settings size={20}/>Quick Actions</h3>{[{label:'Add Stock / Receive',icon:Warehouse,color:'blue'},{label:'Create Order',icon:Package,color:'green'},{label:'Add Rental Listing',icon:House,color:'purple'},{label:'Book Rental',icon:CalendarDays,color:'teal'}].map(action=><button type="button" key={action.label} className={`quick-btn quick-${action.color}`} onClick={()=>handleQuickAction(action.label)}><action.icon size={20}/>{action.label}<ArrowRight size={17}/></button>)}</section><section className="rail-panel"><div className="panel-heading"><h3><Clock3 size={18}/>Recent Stock Activity</h3><button type="button" onClick={()=>setActive('Stock Movements')}>View All →</button></div>{movements.slice(0,4).length ? movements.slice(0,4).map(movement=><div className="activity-row" key={movement.id}><span className="activity-icon activity-blue"><Package size={16}/></span><div><strong>{movement.type}: {movement.sku}</strong><p>{movement.quantity} units · {movement.warehouse}</p></div><small>{movement.createdAt}</small></div>) : <p className="rail-empty">No stock activity recorded.</p>}</section><section className="rail-panel"><div className="panel-heading"><h3><Bell size={18}/>Low Stock Alerts</h3><button type="button" onClick={()=>setActive('Settings')}>Settings →</button></div>{settings.showNotifications && lowStockItems.length ? lowStockItems.slice(0,5).map(item=><div className="notification-row" key={item.id}><span className="activity-icon activity-orange"><CircleHelp size={16}/></span><div><strong>{item.name} · {item.sku}</strong><small>{item.quantity} left in {item.warehouse}</small></div></div>) : <p className="rail-empty">{settings.showNotifications ? 'No low stock alerts.' : 'Low stock alerts are turned off.'}</p>}</section></aside>
   </div>
@@ -778,6 +886,7 @@ function AuthLayout({ mode }) {
       localStorage.setItem(profileStorageKeys.name, form.name.trim())
       localStorage.setItem(profileStorageKeys.email, form.email.trim())
       localStorage.setItem(profileStorageKeys.phone, form.phone.trim())
+      localStorage.setItem(profileStorageKeys.address, '')
       navigate('/dashboard')
       return
     }
