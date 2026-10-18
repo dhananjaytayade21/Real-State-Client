@@ -39,4 +39,4 @@ You can navigate directly to these URLs or use the links/buttons.
 - Property and warehouse photos currently load from Unsplash URLs, so an internet connection is needed for those images.
 
 ## Important: backend is not connected
-Forms are front-end demonstrations only. To make authentication, account creation, inventory, orders, rental bookings, notifications and saved listings persist, connect these UI actions to your ASP.NET Core Web API and database. Do not store plain-text passwords in the browser or local storage. Configure server-side authentication, authorization and validation before production use.
+Login and registration are front-end demos: they save only the username in browser storage and open a personalized dashboard without calling an API. They do not authenticate credentials or create a server-side account. Inventory, orders, rental bookings, notifications and saved listings are also demo UI and do not persist. Connect these actions to your ASP.NET Core Web API and database before production use. Do not store passwords in browser storage; configure server-side authentication, authorization and validation.

@@ -2,7 +2,7 @@ import React, { useState } from 'react'
 import { Link, NavLink, Route, Routes, useNavigate } from 'react-router-dom'
 import {
   ArrowRight, Bell, Box, Building2, CalendarDays, ChartNoAxesCombined,
-  CheckCircle2, ChevronDown, CircleHelp, ClipboardList, Clock3, Eye,
+  CheckCircle2, ChevronDown, ChevronsLeft, ChevronsRight, CircleHelp, ClipboardList, Clock3, Eye,
   EyeOff, Forklift, Heart, House, KeyRound, LayoutDashboard, LockKeyhole,
   LogOut, Mail, MapPin, Menu, MessageSquare, Package, Phone, Search,
   Settings, ShieldCheck, Truck, User, UserRoundPlus, Users, Warehouse,
@@ -15,6 +15,7 @@ const apartmentImage = 'https://images.unsplash.com/photo-1600607687939-ce8a6c25
 const officeImage = 'https://images.unsplash.com/photo-1497366754035-f200968a6e72?auto=format&fit=crop&w=1000&q=85'
 const storageImage = 'https://images.unsplash.com/photo-1586864387967-d02ef85d93e8?auto=format&fit=crop&w=1000&q=85'
 const homeImage = 'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=1000&q=85'
+const usernameStorageKey = 'wmsRentalsUsername'
 
 function Brand({ light = false }) {
   return <Link to="/" className={`brand ${light ? 'brand-light' : ''}`}>
@@ -93,7 +94,15 @@ function Dashboard() {
   const [active, setActive] = useState('Dashboard')
   const [query, setQuery] = useState('')
   const [mobileNav, setMobileNav] = useState(false)
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [notice, setNotice] = useState('')
+  const [userMenuOpen, setUserMenuOpen] = useState(false)
+  const [username] = useState(() => localStorage.getItem(usernameStorageKey) || 'Nandlal')
+  const navigate = useNavigate()
+  const logout = () => {
+    localStorage.removeItem(usernameStorageKey)
+    navigate('/')
+  }
   const activities = [
     { icon: Truck, color: 'green', title: 'Order #ORD-1024', text: 'Stock received - 50 units', time: '2 hours ago' },
     { icon: House, color: 'purple', title: 'Booking Confirmed', text: '2 BHK Apartment - Yavatmal', time: '4 hours ago' },
@@ -101,11 +110,11 @@ function Dashboard() {
     { icon: MessageSquare, color: 'orange', title: 'New Message', text: 'From: Property Owner', time: '6 hours ago' },
   ]
   const filtered = listings.filter(x => `${x.name} ${x.city} ${x.type}`.toLowerCase().includes(query.toLowerCase()))
-  return <div className="dashboard-layout">
-    <aside className={`sidebar ${mobileNav ? 'sidebar-open' : ''}`}><Brand light/><div className="sidebar-menu">{menuGroups.map(group => <div key={group.title}><button className={`side-link ${active === group.title ? 'side-active' : ''}`} onClick={() => {setActive(group.title);setMobileNav(false)}}><group.icon size={19}/>{group.title}{group.items.length > 0 && <ChevronDown size={15} className="side-chevron"/>}</button>{group.items.length > 0 && <div className="side-submenu">{group.items.map(item => <button key={item} onClick={() => {setActive(item);setMobileNav(false)}} className={active === item ? 'sub-active' : ''}>• &nbsp; {item}</button>)}</div>}</div>)}</div><div className="sidebar-bottom"><button className="side-link" onClick={() => setActive('Profile')}><User size={19}/>Profile</button><button className="side-link" onClick={() => setActive('Settings')}><Settings size={19}/>Settings</button><Link className="side-link" to="/login"><LogOut size={19}/>Logout</Link><div className="sidebar-tag"><Warehouse size={42}/><strong>Smarter Operations.<br/>Better Spaces.</strong></div></div></aside>
-    <main className="dashboard-main"><header className="dash-topbar"><button className="mobile-menu dash-menu" onClick={() => setMobileNav(!mobileNav)}><Menu/></button><div className="dash-search"><Search size={18}/><input placeholder="Search warehouse, rentals, orders..." value={query} onChange={e=>setQuery(e.target.value)}/></div><button className="icon-button" onClick={() => setNotice(notice ? '' : 'You are all caught up!')}><Bell/><span className="notification-dot">2</span></button><div className="user-chip"><span>N</span><div><strong>Nandlal</strong><small>User</small></div><ChevronDown size={15}/></div></header>
+  return <div className={`dashboard-layout ${sidebarCollapsed ? 'sidebar-collapsed' : ''}`}>
+    <aside className={`sidebar ${mobileNav ? 'sidebar-open' : ''}`}><div className="sidebar-heading"><Brand light/><button type="button" className="sidebar-collapse" aria-label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'} title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'} aria-pressed={sidebarCollapsed} onClick={() => setSidebarCollapsed(!sidebarCollapsed)}>{sidebarCollapsed ? <ChevronsRight size={18}/> : <ChevronsLeft size={18}/>}</button></div><div className="sidebar-menu">{menuGroups.map(group => <div key={group.title}><button className={`side-link ${active === group.title ? 'side-active' : ''}`} title={sidebarCollapsed ? group.title : undefined} onClick={() => {setActive(group.title);setMobileNav(false)}}><group.icon size={19}/><span className="sidebar-label">{group.title}</span>{group.items.length > 0 && <ChevronDown size={15} className="side-chevron"/>}</button>{group.items.length > 0 && <div className="side-submenu">{group.items.map(item => <button key={item} title={sidebarCollapsed ? item : undefined} onClick={() => {setActive(item);setMobileNav(false)}} className={active === item ? 'sub-active' : ''}>• &nbsp; <span className="sidebar-label">{item}</span></button>)}</div>}</div>)}</div><div className="sidebar-bottom"><button className="side-link" title={sidebarCollapsed ? 'Profile' : undefined} onClick={() => setActive('Profile')}><User size={19}/><span className="sidebar-label">Profile</span></button><button className="side-link" title={sidebarCollapsed ? 'Settings' : undefined} onClick={() => setActive('Settings')}><Settings size={19}/><span className="sidebar-label">Settings</span></button><button type="button" className="side-link" title={sidebarCollapsed ? 'Logout' : undefined} onClick={logout}><LogOut size={19}/><span className="sidebar-label">Logout</span></button><div className="sidebar-tag"><Warehouse size={42}/><strong>Smarter Operations.<br/>Better Spaces.</strong></div></div></aside>
+    <main className="dashboard-main"><header className="dash-topbar"><button className="mobile-menu dash-menu" onClick={() => setMobileNav(!mobileNav)}><Menu/></button><div className="dash-search"><Search size={18}/><input placeholder="Search warehouse, rentals, orders..." value={query} onChange={e=>setQuery(e.target.value)}/></div><button className="icon-button" onClick={() => setNotice(notice ? '' : 'You are all caught up!')}><Bell/><span className="notification-dot">2</span></button><div className="user-menu"><button type="button" className="user-chip" aria-expanded={userMenuOpen} aria-haspopup="menu" onClick={() => setUserMenuOpen(!userMenuOpen)}><span>{username.charAt(0).toUpperCase()}</span><div><strong>{username}</strong><small>User</small></div><ChevronDown size={15}/></button>{userMenuOpen && <div className="user-menu-dropdown" role="menu"><button type="button" role="menuitem" onClick={logout}><LogOut size={16}/>Logout</button></div>}</div></header>
       {notice && <div className="notice"><CheckCircle2 size={17}/>{notice}<button onClick={()=>setNotice('')}><X size={15}/></button></div>}
-      <section className="dash-welcome" style={{backgroundImage:`linear-gradient(90deg,rgba(6,27,49,.88),rgba(6,27,49,.08)),url(${warehouseImage})`}}><div><h1>Welcome Back, Nandlal!</h1><p>Manage your warehouse operations and explore<br/>rental opportunities — all in one place.</p></div></section>
+      <section className="dash-welcome" style={{backgroundImage:`linear-gradient(90deg,rgba(6,27,49,.88),rgba(6,27,49,.08)),url(${warehouseImage})`}}><div><h1>Welcome Back, {username}!</h1><p>Manage your warehouse operations and explore<br/>rental opportunities — all in one place.</p></div></section>
       <section className="stats-grid">
         {[{label:'Total Warehouses',value:'2',icon:Warehouse,color:'blue',link:'View details'},{label:'Total Stock Items',value:'1,248',icon:Package,color:'green',link:'View inventory'},{label:'Active Bookings',value:'3',icon:FileText,color:'purple',link:'View bookings'},{label:'Listed Properties',value:'5',icon:House,color:'orange',link:'View rentals'}].map(s=><button className={`stat-card stat-${s.color}`} key={s.label} onClick={()=>setActive(s.label)}><s.icon size={32}/><div><span>{s.label}</span><strong>{s.value}</strong><small>{s.link} <ArrowRight size={12}/></small></div></button>)}
       </section>
@@ -122,11 +131,28 @@ function AuthLayout({ mode }) {
   const [showPassword, setShowPassword] = useState(false)
   const [message, setMessage] = useState('')
   const [form, setForm] = useState({ name: '', email: '', phone: '', username: '', password: '', confirm: '', remember: true, terms: true })
+  const navigate = useNavigate()
   const update = e => setForm({...form, [e.target.name]: e.target.type === 'checkbox' ? e.target.checked : e.target.value})
   const submit = e => {
     e.preventDefault()
     if (isSignup && form.password !== form.confirm) { setMessage('Passwords do not match.'); return }
-    setMessage(isSignup ? 'Account form validated. Connect your API to create the account.' : 'Demo login validated. Connect your authentication API to continue.')
+    if (isSignup) {
+      const username = form.username.trim()
+      if (!username) {
+        setMessage('Please enter a username.')
+        return
+      }
+      localStorage.setItem(usernameStorageKey, username)
+      navigate('/dashboard')
+      return
+    }
+    const username = form.username.trim()
+    if (!username) {
+      setMessage('Please enter your username.')
+      return
+    }
+    localStorage.setItem(usernameStorageKey, username)
+    navigate('/dashboard')
   }
   return <div className="auth-page"><section className="auth-story" style={{backgroundImage:`linear-gradient(90deg,rgba(4,38,72,.96),rgba(4,38,72,.68),rgba(4,38,72,.2)),url(${warehouseImage})`}}><Brand light/><div className="story-content"><h1>{isSignup ? <>Create Your Account<br/><span>Get Started Today</span></> : <>Manage Warehouses.<br/>Rent Spaces. Grow Together.</>}</h1><p>{isSignup ? 'Join WMS Rentals and manage your warehouse and rental needs with ease. Fast. Secure. Reliable.' : 'Smart warehouse solutions for your storage and rental needs.'}</p><div className="story-benefits">{[{icon:Warehouse,title:'Warehouse Management',text:'Track inventory, manage stock, and optimize operations.'},{icon:House,title:'Rental Listings',text:'Find and list warehouse and commercial spaces for rent.'},{icon:CalendarDays,title:'Easy Bookings',text:'Manage bookings and keep your business moving.'},{icon:ShieldCheck,title:'Secure & Reliable',text:'Your data and operations are always protected.'}].map(b=><div key={b.title}><span><b.icon size={25}/></span><p><strong>{b.title}</strong><small>{b.text}</small></p></div>)}</div></div><div className="story-tagline">Build a Smarter<br/>Warehouse Future</div></section>
     <section className="auth-form-side"><div className="auth-form-wrap"><div className="auth-logo"><span className="brand-mark"><Box size={36}/></span></div><h2>{isSignup ? 'Create Account' : 'Welcome Back!'}</h2><p className="auth-subtitle">{isSignup ? 'Join WMS Rentals and start managing your warehouse and rental properties today.' : 'Sign in to your WMS Rentals account'}</p>
