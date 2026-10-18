@@ -2,12 +2,19 @@ import React, { useState } from 'react'
 import { Link, NavLink, Route, Routes, useNavigate } from 'react-router-dom'
 import {
   ArrowRight, Bell, Box, Boxes, Building2, CalendarDays, ChartNoAxesCombined,
-  CheckCircle2, ChevronDown, PanelLeftClose, PanelLeftOpen, CircleHelp, ClipboardList, Clock3, Eye,
-  EyeOff, Forklift, Heart, House, KeyRound, LayoutDashboard, LockKeyhole,
-  LogOut, Mail, MapPin, Menu, MessageSquare, Moon, Package, Phone, Search, Sun,
-  Minus, Pencil, Plus, Save, Settings, ShieldCheck, Truck, User, UserRoundPlus, Users, Warehouse,
-  X, Barcode, BadgeCheck, FileText
+  CheckCircle2, ChevronDown, PanelLeftClose, PanelLeftOpen, CircleHelp, ClipboardList, Clock3,
+  Forklift, Heart, House, KeyRound, LayoutDashboard, LogOut, Mail, MapPin, Menu, MessageSquare,
+  Moon, Package, Phone, Search, Sun, Minus, Pencil, Plus, Settings, ShieldCheck, Truck, User, Users, Warehouse,
+  X, BadgeCheck, FileText
 } from 'lucide-react'
+import ProfileForm from './components/forms/ProfileForm'
+import InventoryReceiveForm from './components/forms/InventoryReceiveForm'
+import InventoryItemEditRow from './components/forms/InventoryItemEditRow'
+import OperationRecordForm from './components/forms/OperationRecordForm'
+import BarcodeLookupForm from './components/forms/BarcodeLookupForm'
+import SettingsForm from './components/forms/SettingsForm'
+import AuthForm from './components/forms/AuthForm'
+import { getInventoryImages, imageFileToDataUrl } from './utils/images'
 
 const warehouseImage = 'https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d?auto=format&fit=crop&w=1400&q=85'
 const warehouseWide = 'https://images.unsplash.com/photo-1565610222536-ef125c59da2e?auto=format&fit=crop&w=1400&q=85'
@@ -36,43 +43,6 @@ const operationStorageKeys = {
 }
 const readStoredList = key => JSON.parse(localStorage.getItem(key) || '[]')
 const createId = () => globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`
-const getInventoryImages = item => Array.isArray(item.images) ? item.images : item.image ? [item.image] : []
-const imageFileToDataUrl = file => new Promise((resolve, reject) => {
-  if (!file.type.startsWith('image/')) {
-    reject(new Error('Choose an image file.'))
-    return
-  }
-  if (file.size > 10 * 1024 * 1024) {
-    reject(new Error('Choose an image smaller than 10 MB.'))
-    return
-  }
-  const reader = new FileReader()
-  reader.onerror = () => reject(new Error('The selected image could not be read.'))
-  reader.onload = () => {
-    const image = new Image()
-    image.onerror = () => reject(new Error('The selected image could not be processed.'))
-    image.onload = () => {
-      const scale = Math.min(1, 1280 / Math.max(image.width, image.height))
-      const canvas = document.createElement('canvas')
-      canvas.width = Math.round(image.width * scale)
-      canvas.height = Math.round(image.height * scale)
-      const context = canvas.getContext('2d')
-      if (!context) {
-        reject(new Error('Image processing is not available in this browser.'))
-        return
-      }
-      context.drawImage(image, 0, 0, canvas.width, canvas.height)
-      const dataUrl = canvas.toDataURL('image/jpeg', 0.78)
-      if (dataUrl.length > 2 * 1024 * 1024) {
-        reject(new Error('The image is too large to save in browser storage. Choose a smaller image.'))
-        return
-      }
-      resolve(dataUrl)
-    }
-    image.src = reader.result
-  }
-  reader.readAsDataURL(file)
-})
 const formatRecordDate = value => {
   const date = new Date(value)
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString()
@@ -191,14 +161,7 @@ function ProfilePanel({ profile, onSave }) {
         <div><h2>{profile.name || profile.username}</h2><p>@{profile.username}</p></div>
         <span className="profile-status"><BadgeCheck size={15}/>Account</span>
       </div>
-      {editing ? <form className="profile-form" onSubmit={submit}>
-        <label>Full Name<input name="name" value={form.name} onChange={update} autoComplete="name" required/></label>
-        <label>Username<input name="username" value={form.username} onChange={update} autoComplete="username" required/></label>
-        <label>Email Address<input name="email" type="email" value={form.email} onChange={update} autoComplete="email"/></label>
-        <label>Mobile Number<input name="phone" type="tel" value={form.phone} onChange={update} autoComplete="tel"/></label>
-        <label>Address<textarea name="address" value={form.address} onChange={update} autoComplete="street-address" rows="3"/></label>
-        <div className="profile-form-actions"><button type="button" className="btn btn-outline profile-cancel" onClick={cancelEdit}><X size={16}/>Cancel</button><button type="submit" className="btn btn-primary"><Save size={16}/>Save Changes</button></div>
-      </form> : <div className="profile-details">
+      {editing ? <ProfileForm form={form} onChange={update} onCancel={cancelEdit} onSubmit={submit}/> : <div className="profile-details">
         <div><span><User size={17}/>Full Name</span><strong>{profile.name || 'Not provided'}</strong></div>
         <div><span><User size={17}/>Username</span><strong>{profile.username || 'Not provided'}</strong></div>
         <div><span><Mail size={17}/>Email Address</span><strong>{profile.email || 'Not provided'}</strong></div>
@@ -207,37 +170,6 @@ function ProfilePanel({ profile, onSave }) {
       </div>}
     </article>
   </section>
-}
-
-function InventoryImageAttachments({ images, onAdd, onRemove, onError, inputId }) {
-  const [processing, setProcessing] = useState(false)
-  const addFiles = async e => {
-    const files = Array.from(e.target.files || [])
-    e.target.value = ''
-    if (!files.length) return
-    setProcessing(true)
-    try {
-      for (const file of files) {
-        try {
-          onAdd(await imageFileToDataUrl(file))
-        } catch (error) {
-          onError(error.message)
-          break
-        }
-      }
-    } finally {
-      setProcessing(false)
-    }
-  }
-  return <div className="inventory-image-attachments">
-    <input id={inputId} type="file" accept="image/*" multiple onChange={addFiles} disabled={processing}/>
-    <label className="inventory-image-add" htmlFor={inputId}><Plus size={14}/>{processing ? 'Adding photos…' : 'Add photos'}</label>
-    <span className="inventory-image-hint">Choose one or more images; they are added one at a time.</span>
-    {images.length > 0 && <div className="inventory-image-previews">{images.map((image, index) => <div className="inventory-image-preview" key={`${index}-${image.slice(0, 32)}`}>
-      <img src={image} alt={`Item photo ${index + 1}`}/>
-      <button type="button" className="inventory-action-cancel" aria-label={`Remove photo ${index + 1}`} disabled={processing} onClick={() => onRemove(index)}>Remove</button>
-    </div>)}</div>}
-  </div>
 }
 
 function InventoryPanel({ items, warehouseOptions, search, addStockOpen, onOpenAddStock, onReceiveStock, onCloseAddStock, onUpdateItem, onAdjustQuantity, onDeleteItem, onCreateWarehouse }) {
@@ -303,38 +235,35 @@ function InventoryPanel({ items, warehouseOptions, search, addStockOpen, onOpenA
       <article><span><Warehouse size={19}/></span><div><small>Warehouses</small><strong>{new Set(items.map(item => item.warehouse)).size}</strong></div></article>
     </div>
     {!warehouseOptions.length && <div className="notice"><Warehouse size={17}/>Add a warehouse before receiving stock.<button type="button" className="inventory-edit-button" onClick={onCreateWarehouse}>Create warehouse</button></div>}
-    {addStockOpen && <form className="inventory-form" onSubmit={submit}>
-      <div className="inventory-form-heading"><div><h2>Receive stock</h2><p>Add a new item or receive more units for an existing SKU.</p></div><button type="button" aria-label="Close add stock form" onClick={onCloseAddStock}><X size={18}/></button></div>
-      <div className="inventory-form-fields">
-        <label>Item name<input name="name" value={form.name} onChange={update} placeholder="Enter item name" required/></label>
-        <label>SKU<input name="sku" value={form.sku} onChange={update} placeholder="Enter SKU" required/></label>
-        <label>Category<input name="category" value={form.category} onChange={update} placeholder="Enter category"/></label>
-        <label>Warehouse<select name="warehouse" value={form.warehouse} onChange={update} required disabled={!warehouseOptions.length}><option value="" disabled>Select warehouse</option>{warehouseOptions.map(name=><option key={name}>{name}</option>)}</select></label>
-        <label>Quantity received<input name="quantity" type="number" min="1" step="1" value={form.quantity} onChange={update} placeholder="Enter quantity" required/></label>
-        <div className="inventory-form-image-field"><span>Item photos</span><InventoryImageAttachments images={form.images} inputId="new-inventory-images" onAdd={image => {setForm(current => ({...current, images: [...current.images, image]}));setFormError('')}} onRemove={index => {setForm(current => ({...current, images: current.images.filter((_, imageIndex) => imageIndex !== index)}));setFormError('')}} onError={setFormError}/></div>
-      </div>
-      {formError && <p className="form-message form-error" role="alert">{formError}</p>}
-      <div className="inventory-form-actions"><button type="button" className="btn btn-outline inventory-cancel" onClick={onCloseAddStock}>Cancel</button><button type="submit" className="btn btn-primary"><Plus size={16}/>Save Stock</button></div>
-    </form>}
+    {addStockOpen && <InventoryReceiveForm
+      form={form}
+      warehouseOptions={warehouseOptions}
+      formError={formError}
+      onChange={update}
+      onAddImage={image => {setForm(current => ({...current, images: [...current.images, image]}));setFormError('')}}
+      onRemoveImage={index => {setForm(current => ({...current, images: current.images.filter((_, imageIndex) => imageIndex !== index)}));setFormError('')}}
+      onImageError={setFormError}
+      onClose={onCloseAddStock}
+      onSubmit={submit}
+    />}
     <section className="inventory-table-card">
       <div className="inventory-table-heading"><div><h2>Stock list</h2><p>{filteredItems.length} {filteredItems.length === 1 ? 'item' : 'items'}</p></div><span><Search size={16}/>{search || 'All inventory'}</span></div>
       {formError && !addStockOpen && <p className="form-message form-error" role="alert">{formError}</p>}
       {filteredItems.length ? <div className="inventory-table-scroll">
         <table className="inventory-table">
           <thead><tr><th>Item</th><th>SKU</th><th>Category</th><th>Warehouse</th><th>Quantity</th><th>Updated</th><th>Actions</th></tr></thead>
-          <tbody>{filteredItems.map(item => <tr key={item.id}>
-            {editingId === item.id ? <>
-              <td><div className="inventory-edit-product">
-                <input className="inventory-edit-input" aria-label="Item name" name="name" value={editForm.name} onChange={updateEditForm} required/>
-                <InventoryImageAttachments images={editForm.images} inputId={`edit-inventory-images-${item.id}`} onAdd={image => {setEditForm(current => ({...current, images: [...current.images, image]}));setFormError('')}} onRemove={index => {setEditForm(current => ({...current, images: current.images.filter((_, imageIndex) => imageIndex !== index)}));setFormError('')}} onError={setFormError}/>
-              </div></td>
-              <td><input className="inventory-edit-input" aria-label="SKU" name="sku" value={editForm.sku} onChange={updateEditForm} required/></td>
-              <td><input className="inventory-edit-input" aria-label="Category" name="category" value={editForm.category} onChange={updateEditForm}/></td>
-              <td><select className="inventory-edit-input" aria-label="Warehouse" name="warehouse" value={editForm.warehouse} onChange={updateEditForm} required>{Array.from(new Set([...warehouseOptions, editForm.warehouse])).filter(Boolean).map(name => <option key={name}>{name}</option>)}</select></td>
-              <td><span className="inventory-quantity">{item.quantity.toLocaleString()}</span></td>
-              <td>{item.updatedAt}</td>
-              <td><form className="inventory-row-actions" onSubmit={saveEdit}><button type="submit" className="inventory-action-save">Save</button><button type="button" className="inventory-action-cancel" onClick={cancelEdit}>Cancel</button></form></td>
-            </> : <>
+          <tbody>{filteredItems.map(item => editingId === item.id ? <InventoryItemEditRow
+            key={item.id}
+            item={item}
+            editForm={editForm}
+            warehouseOptions={warehouseOptions}
+            onChange={updateEditForm}
+            onAddImage={image => {setEditForm(current => ({...current, images: [...current.images, image]}));setFormError('')}}
+            onRemoveImage={index => {setEditForm(current => ({...current, images: current.images.filter((_, imageIndex) => imageIndex !== index)}));setFormError('')}}
+            onImageError={setFormError}
+            onSave={saveEdit}
+            onCancel={cancelEdit}
+          /> : <tr key={item.id}>
               <td><div className="inventory-product-cell">{getInventoryImages(item).length > 0 && <span className="inventory-photo-count"><img className="inventory-item-thumb" src={getInventoryImages(item)[0]} alt=""/>{getInventoryImages(item).length > 1 && <small>+{getInventoryImages(item).length - 1}</small>}</span>}<strong>{item.name}</strong></div></td>
               <td><span className="inventory-sku">{item.sku}</span></td>
               <td>{item.category}</td>
@@ -342,7 +271,6 @@ function InventoryPanel({ items, warehouseOptions, search, addStockOpen, onOpenA
               <td><div className="inventory-quantity-control"><button type="button" aria-label={`Decrease ${item.name} quantity`} title="Decrease quantity" disabled={item.quantity <= 0} onClick={() => onAdjustQuantity(item.id, -1)}><Minus size={13}/></button><span className="inventory-quantity">{item.quantity.toLocaleString()}</span><button type="button" aria-label={`Increase ${item.name} quantity`} title="Increase quantity" onClick={() => onAdjustQuantity(item.id, 1)}><Plus size={13}/></button></div></td>
               <td>{item.updatedAt}</td>
               <td><div className="inventory-row-actions"><button type="button" className="inventory-edit-button" onClick={() => startEditing(item)}><Pencil size={13}/>Edit</button><button type="button" className="inventory-action-cancel" onClick={() => onDeleteItem(item.id)}>Delete</button></div></td>
-            </>}
           </tr>)}</tbody>
         </table>
       </div> : <div className="inventory-empty"><Package size={26}/><strong>No stock items found</strong><p>{search ? 'Try a different search.' : 'Add stock to get your inventory started.'}</p></div>}
@@ -403,12 +331,18 @@ function OperationPanel({ title, description, records, fields, onSave, onDelete,
       <div><span className="eyebrow blue-text">OPERATIONS</span><h1>{title}</h1><p>{description}</p></div>
       {!formOpen && <button type="button" className="btn btn-primary" disabled={disableAdd} title={disableAdd ? 'Create the required records first.' : undefined} onClick={startCreate}><Plus size={16}/>{addLabel}</button>}
     </div>
-    {formOpen && <form className="operation-form" onSubmit={submit}>
-      <div className="inventory-form-heading"><div><h2>{editingId ? `Edit ${title.toLowerCase()} record` : addLabel}</h2><p>Enter the details below, then save to update this workspace.</p></div><button type="button" aria-label="Close form" onClick={cancel}><X size={18}/></button></div>
-      <div className="operation-form-fields">{fields.map(field=><label key={field.key}>{field.label}{field.type === 'image' ? <><input name={field.key} type="file" accept="image/*" onChange={update}/>{form[field.key] && <span className="image-upload-preview"><img src={form[field.key]} alt="Selected upload preview"/><button type="button" className="inventory-action-cancel" onClick={()=>setForm(current=>({...current,[field.key]:''}))}>Remove image</button></span>}</> : field.type === 'select' ? <select name={field.key} value={form[field.key] ?? ''} onChange={update} required={field.required !== false}><option value="" disabled>{field.options?.length ? 'Select an option' : 'No options available'}</option>{field.options?.map(option=><option key={option.value} value={option.value}>{option.label}</option>)}</select> : field.type === 'textarea' ? <textarea name={field.key} value={form[field.key] ?? ''} onChange={update} placeholder={field.placeholder || ''} required={field.required !== false} rows="3"/> : <input name={field.key} type={field.type || 'text'} min={field.min} step={field.step} value={form[field.key] ?? ''} onChange={update} placeholder={field.placeholder || ''} required={field.required !== false}/>}</label>)}</div>
-      {formError && <p className="form-message form-error" role="alert">{formError}</p>}
-      <div className="inventory-form-actions"><button type="button" className="btn btn-outline inventory-cancel" onClick={cancel}>Cancel</button><button type="submit" className="btn btn-primary"><Save size={15}/>{editingId ? 'Save Changes' : 'Save'}</button></div>
-    </form>}
+    {formOpen && <OperationRecordForm
+      title={title}
+      addLabel={addLabel}
+      fields={fields}
+      form={form}
+      formError={formError}
+      editing={Boolean(editingId)}
+      onChange={update}
+      onImageRemove={key => setForm(current => ({...current, [key]: ''}))}
+      onCancel={cancel}
+      onSubmit={submit}
+    />}
     <section className="inventory-table-card">
       <div className="inventory-table-heading"><div><h2>{title} records</h2><p>{filtered.length} {filtered.length === 1 ? 'record' : 'records'}</p></div><span><Search size={16}/>{search || 'All records'}</span></div>
       {filtered.length ? <div className="inventory-table-scroll">
@@ -439,7 +373,7 @@ function BarcodePanel({ inventory, onAdjustQuantity, search }) {
   const filtered = inventory.filter(item => `${item.name} ${item.sku} ${item.warehouse}`.toLowerCase().includes(normalizedSearch))
   return <section className="operation-page">
     <div className="operation-heading"><div><span className="eyebrow blue-text">WAREHOUSE MANAGEMENT</span><h1>Barcode / RFID</h1><p>Look up a stock item by SKU or barcode and adjust its on-hand quantity.</p></div></div>
-    <form className="barcode-lookup" onSubmit={lookup}><label htmlFor="barcode-code"><Barcode size={20}/>Scan or enter item SKU</label><div><input id="barcode-code" value={code} onChange={e=>setCode(e.target.value)} placeholder="Enter or scan a SKU" required autoFocus/><button className="btn btn-primary" type="submit"><Search size={15}/>Find item</button></div></form>
+    <BarcodeLookupForm code={code} onChange={e=>setCode(e.target.value)} onSubmit={lookup}/>
     {scanned && <div className="barcode-result"><div><small>Matched item</small><strong>{scanned.name} · {scanned.sku}</strong><span>{scanned.warehouse} · {scanned.quantity} units</span></div><div><button type="button" className="btn btn-outline" disabled={scanned.quantity <= 0} onClick={()=>{onAdjustQuantity(scanned.id,-1);setScanned(current=>({...current,quantity:Math.max(0,current.quantity-1)}))}}><Minus size={14}/>Remove 1</button><button type="button" className="btn btn-primary" onClick={()=>{onAdjustQuantity(scanned.id,1);setScanned(current=>({...current,quantity:current.quantity+1}))}}><Plus size={14}/>Add 1</button></div></div>}
     {scanned === false && <div className="notice barcode-notice"><CircleHelp size={17}/>No inventory item matches “{code}”.</div>}
     <section className="inventory-table-card"><div className="inventory-table-heading"><div><h2>Available inventory</h2><p>{filtered.length} {filtered.length === 1 ? 'item' : 'items'}</p></div><span><Search size={16}/>{search || 'All inventory'}</span></div>{filtered.length ? <div className="inventory-table-scroll"><table className="inventory-table"><thead><tr><th>Item</th><th>SKU / Barcode</th><th>Warehouse</th><th>On hand</th></tr></thead><tbody>{filtered.map(item=><tr key={item.id}><td>{item.name}</td><td><span className="inventory-sku">{item.sku}</span></td><td>{item.warehouse}</td><td>{item.quantity}</td></tr>)}</tbody></table></div>:<div className="inventory-empty"><Package size={26}/><strong>No inventory available</strong><p>Add stock in Inventory before scanning.</p></div>}</section>
@@ -476,12 +410,7 @@ function ReportsPanel({ inventory, movements, orders, listings, bookings }) {
 }
 
 function SettingsPanel({ settings, onSave }) {
-  const [form, setForm] = useState(settings)
-  const submit = e => {
-    e.preventDefault()
-    onSave({ ...form, lowStockThreshold: Number(form.lowStockThreshold) })
-  }
-  return <section className="operation-page"><div className="operation-heading"><div><span className="eyebrow blue-text">ACCOUNT</span><h1>Settings</h1><p>Set dashboard and inventory preferences for this browser.</p></div></div><form className="operation-form" onSubmit={submit}><div className="inventory-form-heading"><div><h2>Preferences</h2><p>These settings are stored locally in this browser.</p></div></div><div className="operation-form-fields"><label>Low stock warning threshold<input type="number" min="0" step="1" value={form.lowStockThreshold} onChange={e=>setForm({...form,lowStockThreshold:e.target.value})}/></label><label>Dashboard density<select value={form.density} onChange={e=>setForm({...form,density:e.target.value})}><option value="comfortable">Comfortable</option><option value="compact">Compact</option></select></label><label className="settings-toggle"><input type="checkbox" checked={form.showNotifications} onChange={e=>setForm({...form,showNotifications:e.target.checked})}/>Show low stock alerts</label></div><div className="inventory-form-actions"><button className="btn btn-primary" type="submit"><Save size={15}/>Save Settings</button></div></form><div className="inventory-table-card settings-info"><h2>Data storage</h2><p>Inventory, listings, bookings, orders, messages, and settings are saved to this browser only. They are not synced to other devices.</p></div></section>
+  return <section className="operation-page"><div className="operation-heading"><div><span className="eyebrow blue-text">ACCOUNT</span><h1>Settings</h1><p>Set dashboard and inventory preferences for this browser.</p></div></div><SettingsForm settings={settings} onSave={onSave}/><div className="inventory-table-card settings-info"><h2>Data storage</h2><p>Inventory, listings, bookings, orders, messages, and settings are saved to this browser only. They are not synced to other devices.</p></div></section>
 }
 
 function DashboardOverview({ username, inventory, warehouses, listings, bookings, movements, lowStockItems, onNavigate, onQuickAction }) {
@@ -900,17 +829,8 @@ function AuthLayout({ mode }) {
   }
   return <div className="auth-page"><section className="auth-story" style={{backgroundImage:`linear-gradient(90deg,rgba(4,38,72,.96),rgba(4,38,72,.68),rgba(4,38,72,.2)),url(${warehouseImage})`}}><Brand light/><div className="story-content"><h1>{isSignup ? <>Create Your Account<br/><span>Get Started Today</span></> : <>Manage Warehouses.<br/>Rent Spaces. Grow Together.</>}</h1><p>{isSignup ? 'Join WMS Rentals and manage your warehouse and rental needs with ease. Fast. Secure. Reliable.' : 'Smart warehouse solutions for your storage and rental needs.'}</p><div className="story-benefits">{[{icon:Warehouse,title:'Warehouse Management',text:'Track inventory, manage stock, and optimize operations.'},{icon:House,title:'Rental Listings',text:'Find and list warehouse and commercial spaces for rent.'},{icon:CalendarDays,title:'Easy Bookings',text:'Manage bookings and keep your business moving.'},{icon:ShieldCheck,title:'Secure & Reliable',text:'Your data and operations are always protected.'}].map(b=><div key={b.title}><span><b.icon size={25}/></span><p><strong>{b.title}</strong><small>{b.text}</small></p></div>)}</div></div><div className="story-tagline">Build a Smarter<br/>Warehouse Future</div></section>
     <section className="auth-form-side"><div className="auth-form-wrap"><div className="auth-logo"><span className="brand-mark"><Box size={36}/></span></div><h2>{isSignup ? 'Create Account' : 'Welcome Back!'}</h2><p className="auth-subtitle">{isSignup ? 'Join WMS Rentals and start managing your warehouse and rental properties today.' : 'Sign in to your WMS Rentals account'}</p>
-      <form onSubmit={submit} className="auth-form">
-        {isSignup && <><label>Full Name <em>*</em><div className="input-wrap"><User size={18}/><input name="name" placeholder="Enter your full name" value={form.name} onChange={update} required/></div></label><label>Email Address <em>*</em><div className="input-wrap"><Mail size={18}/><input name="email" type="email" placeholder="Enter your email address" value={form.email} onChange={update} required/></div></label><label>Mobile Number <em>*</em><div className="input-wrap"><Phone size={18}/><input name="phone" type="tel" placeholder="Enter your mobile number" value={form.phone} onChange={update} required/></div></label></>}
-        <label>{isSignup ? 'Username' : 'Username'} <em>*</em><div className="input-wrap"><User size={18}/><input name="username" placeholder={isSignup ? 'Choose a username' : 'Enter your username'} value={form.username} onChange={update} autoComplete="username" required/></div></label>
-        <label>Password <em>*</em><div className="input-wrap"><LockKeyhole size={18}/><input name="password" type={showPassword ? 'text' : 'password'} placeholder={isSignup ? 'Create a strong password' : 'Enter your password'} value={form.password} onChange={update} autoComplete={isSignup ? 'new-password' : 'current-password'} required minLength={6}/><button type="button" className="input-icon-button" onClick={()=>setShowPassword(!showPassword)} aria-label="Toggle password visibility">{showPassword ? <EyeOff size={18}/> : <Eye size={18}/>}</button></div></label>
-        {isSignup && <label>Confirm Password <em>*</em><div className="input-wrap"><LockKeyhole size={18}/><input name="confirm" type={showPassword ? 'text' : 'password'} placeholder="Confirm your password" value={form.confirm} onChange={update} required minLength={6}/></div></label>}
-        {!isSignup ? <div className="auth-options"><label className="check-label"><input type="checkbox" name="remember" checked={form.remember} onChange={update}/> Remember me</label><button type="button" className="text-link" onClick={()=>setMessage('Password reset flow: connect this action to your API.')}>Forgot Password?</button></div> : <label className="check-label terms-check"><input type="checkbox" name="terms" checked={form.terms} onChange={update} required/> I agree to the <a href="#terms">Terms of Service</a> and <a href="#privacy">Privacy Policy</a></label>}
-        <button className="btn btn-primary auth-submit" type="submit">{isSignup ? <><UserRoundPlus size={19}/> Sign Up <ArrowRight size={20}/></> : <>Login <ArrowRight size={21}/></>}</button>
-        {message && <div className={message.includes('match') ? 'form-message form-error' : 'form-message'}>{message}</div>}
-        <div className="or-divider"><span>or</span></div>
-        {isSignup ? <button type="button" className="google-btn" onClick={()=>setMessage('Google sign-up needs OAuth configuration.')}><b>G</b> Sign up with Google</button> : <Link className="google-btn" to="/signup"><UserRoundPlus size={18}/> Create New Account</Link>}
-      </form><p className="auth-switch">{isSignup ? 'Already have an account?' : "Don't have an account?"} <Link to={isSignup ? '/login' : '/signup'}>{isSignup ? 'Login' : 'Sign Up'}</Link></p><small className="copyright">© 2026 WMS Rentals. All rights reserved.</small></div></section></div>
+      <AuthForm isSignup={isSignup} form={form} update={update} showPassword={showPassword} setShowPassword={setShowPassword} message={message} setMessage={setMessage} onSubmit={submit}/>
+      <p className="auth-switch">{isSignup ? 'Already have an account?' : "Don't have an account?"} <Link to={isSignup ? '/login' : '/signup'}>{isSignup ? 'Login' : 'Sign Up'}</Link></p><small className="copyright">© 2026 WMS Rentals. All rights reserved.</small></div></section></div>
 }
 
 export default function App() {
