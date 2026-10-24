@@ -1,0 +1,36 @@
+@WSMS.Rentals.Api_HostAddress = http://localhost:5094
+
+GET {{WSMS.Rentals.Api_HostAddress}}/api/health/live
+Accept: application/json
+
+###
+
+GET {{WSMS.Rentals.Api_HostAddress}}/api/health/ready
+Accept: application/json
+
+###
+
+POST {{WSMS.Rentals.Api_HostAddress}}/api/auth/register
+Content-Type: application/json
+
+{
+  "username": "warehouse-user",
+  "name": "Warehouse User",
+  "email": "warehouse-user@example.test",
+  "phone": "",
+  "password": "ChangeThis123!"
+}
+
+###
+
+# Copy the JWT returned by registration into this header.
+POST {{WSMS.Rentals.Api_HostAddress}}/api/warehouses
+Authorization: Bearer REPLACE_WITH_JWT
+Content-Type: application/json
+
+{
+  "name": "Example warehouse",
+  "location": "Austin",
+  "capacity": 1000,
+  "notes": "Test warehouse"
+}

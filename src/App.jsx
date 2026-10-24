@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { Link, NavLink, Route, Routes, useNavigate } from 'react-router-dom'
 import ConfirmDialog from './components/ConfirmDialog'
 import {
@@ -16,6 +16,7 @@ import BarcodeLookupForm from './components/forms/BarcodeLookupForm'
 import SettingsForm from './components/forms/SettingsForm'
 import AuthForm from './components/forms/AuthForm'
 import { getInventoryImages, imageFileToDataUrl } from './utils/images'
+import { apiRequest, clearApiToken, getApiToken, setApiToken } from './utils/api'
 
 const warehouseImage = 'https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d?auto=format&fit=crop&w=1400&q=85'
 const warehouseWide = 'https://images.unsplash.com/photo-1565610222536-ef125c59da2e?auto=format&fit=crop&w=1400&q=85'
@@ -25,13 +26,6 @@ const storageImage = 'https://images.unsplash.com/photo-1586864387967-d02ef85d93
 const homeImage = 'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=1000&q=85'
 const usernameStorageKey = 'wmsRentalsUsername'
 const themeStorageKey = 'wmsRentalsTheme'
-const profileStorageKeys = {
-  name: 'wmsRentalsProfileName',
-  email: 'wmsRentalsProfileEmail',
-  phone: 'wmsRentalsProfilePhone',
-  address: 'wmsRentalsProfileAddress',
-}
-const inventoryStorageKey = 'wmsRentalsInventory'
 const operationStorageKeys = {
   listings: 'wmsRentalsListings',
   movements: 'wmsRentalsMovements',
@@ -42,8 +36,23 @@ const operationStorageKeys = {
   settings: 'wmsRentalsSettings',
   warehouses: 'wmsRentalsWarehouses',
 }
-const readStoredList = key => JSON.parse(localStorage.getItem(key) || '[]')
-const createId = () => globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`
+const enumLabel = value => value ? `${value.charAt(0)}${value.slice(1).toLowerCase()}` : ''
+const bookingStatusLabel = value => ({
+  pending: 'Requested',
+  approved: 'Confirmed',
+  requested: 'Requested',
+  confirmed: 'Confirmed',
+  active: 'Active',
+  completed: 'Completed',
+  cancelled: 'Cancelled',
+  rejected: 'Rejected',
+})[value?.toLowerCase()] || enumLabel(value)
+const listingFromApi = listing => ({
+  ...listing,
+  type: enumLabel(listing.type),
+  price: Number(listing.price),
+  image: listing.imageUrl,
+})
 const formatRecordDate = value => {
   const date = new Date(value)
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString()
@@ -90,12 +99,39 @@ function ListingCard({ item, compact = false, saved: savedValue, onToggleFavorit
 }
 
 function Home() {
-  const [listings] = useState(() => readStoredList(operationStorageKeys.listings))
-  const [favorites, setFavorites] = useState(() => JSON.parse(localStorage.getItem(operationStorageKeys.favorites) || '[]'))
-  const toggleFavorite = id => {
-    const updated = favorites.includes(id) ? favorites.filter(item => item !== id) : [...favorites, id]
-    localStorage.setItem(operationStorageKeys.favorites, JSON.stringify(updated))
-    setFavorites(updated)
+  const [listings, setListings] = useState([])
+  const [favorites, setFavorites] = useState([])
+  const [loadError, setLoadError] = useState('')
+  const navigate = useNavigate()
+  useEffect(() => {
+    let active = true
+    const loadListings = async () => {
+      try {
+        const data = await apiRequest('/listings')
+        if (active) setListings(data.map(listingFromApi))
+        if (getApiToken()) {
+          const saved = await apiRequest('/favorites')
+          if (active) setFavorites(saved.map(favorite => favorite.listingId))
+        }
+      } catch (error) {
+        if (active) setLoadError(error.message)
+      }
+    }
+    loadListings()
+    return () => { active = false }
+  }, [])
+  const toggleFavorite = async id => {
+    if (!getApiToken()) {
+      navigate('/login')
+      return
+    }
+    const saved = favorites.includes(id)
+    try {
+      await apiRequest(`/favorites/${id}`, { method: saved ? 'DELETE' : 'PUT' })
+      setFavorites(current => saved ? current.filter(item => item !== id) : [...current, id])
+    } catch (error) {
+      setLoadError(error.message)
+    }
   }
   return <><Header />
     <main>
@@ -112,7 +148,7 @@ function Home() {
         <article className="promo-card promo-blue" id="warehouse"><img src={warehouseImage} alt="Warehouse shelves" /><div><span className="eyebrow blue-text">WAREHOUSE MANAGEMENT SYSTEM</span><h2>Take Control of Your<br />Supply Chain</h2><p>Our WMS helps you optimize space, reduce errors, and improve productivity with real-time tracking and automation.</p><ul><li><CheckCircle2 />Stock & lot tracking</li><li><CheckCircle2 />Barcode / RFID support</li><li><CheckCircle2 />Multi-warehouse management</li><li><CheckCircle2 />Inventory & order reports</li></ul><Link className="btn btn-primary" to="/dashboard">Get Started <ArrowRight size={16}/></Link></div></article>
         <article className="promo-card promo-green" id="rentals"><img src={apartmentImage} alt="Modern rental property" /><div><span className="eyebrow green-text">RENTAL PORTAL</span><h2>Discover Great<br />Rental Opportunities</h2><p>Whether you're looking for a home, office, warehouse or commercial space — our rental portal makes it simple, safe and fast.</p><ul><li><CheckCircle2 />Residential & commercial properties</li><li><CheckCircle2 />Warehouse & industrial spaces</li><li><CheckCircle2 />Flexible rental terms</li><li><CheckCircle2 />Direct owner-to-tenant connection</li></ul><a className="btn btn-green" href="#popular">Browse Rentals <ArrowRight size={16}/></a></div></article>
       </section>
-      <section className="popular-section" id="popular"><div className="content-width"><div className="section-heading"><div><span className="eyebrow blue-text">FEATURED</span><h2>Popular Listings</h2></div><Link to="/dashboard" className="section-action">Manage Listings <ArrowRight size={15}/></Link></div>{listings.length ? <div className="listing-grid">{listings.map(item => <ListingCard item={item} key={item.id} saved={favorites.includes(item.id)} onToggleFavorite={toggleFavorite}/>)}</div> : <p className="home-empty-listings">No properties are listed yet. Sign in to add the first rental listing.</p>}</div></section>
+      <section className="popular-section" id="popular"><div className="content-width"><div className="section-heading"><div><span className="eyebrow blue-text">FEATURED</span><h2>Popular Listings</h2></div><Link to="/dashboard" className="section-action">Manage Listings <ArrowRight size={15}/></Link></div>{loadError && <p className="form-message form-error" role="alert">{loadError}</p>}{listings.length ? <div className="listing-grid">{listings.map(item => <ListingCard item={item} key={item.id} saved={favorites.includes(item.id)} onToggleFavorite={toggleFavorite}/>)}</div> : <p className="home-empty-listings">No properties are listed yet. Sign in to add the first rental listing.</p>}</div></section>
     </main>
     <footer className="site-footer" id="contact"><Brand light/><nav><a href="/">Home</a><a href="#warehouse">Warehouse</a><a href="#rentals">Rental</a><a href="#about">About</a><a href="#contact">Contact</a></nav><span>© 2026 WMSRentals. All rights reserved.</span></footer>
   </>
@@ -135,7 +171,7 @@ function ProfilePanel({ profile, onSave }) {
     setEditing(false)
     setSaved(false)
   }
-  const submit = e => {
+  const submit = async e => {
     e.preventDefault()
     const updatedProfile = {
       name: form.name.trim(),
@@ -144,10 +180,11 @@ function ProfilePanel({ profile, onSave }) {
       phone: form.phone.trim(),
       address: form.address.trim(),
     }
-    onSave(updatedProfile)
-    setForm(updatedProfile)
-    setEditing(false)
-    setSaved(true)
+    if (await onSave(updatedProfile)) {
+      setForm(updatedProfile)
+      setEditing(false)
+      setSaved(true)
+    }
   }
 
   return <section className="profile-page">
@@ -179,6 +216,11 @@ function InventoryPanel({ items, warehouseOptions, search, addStockOpen, onOpenA
   const [editingId, setEditingId] = useState(null)
   const [editForm, setEditForm] = useState(null)
   const [formError, setFormError] = useState('')
+  useEffect(() => {
+    if (!form.warehouse && warehouseOptions.length) {
+      setForm(current => ({ ...current, warehouse: warehouseOptions[0] }))
+    }
+  }, [form.warehouse, warehouseOptions])
   const normalizedSearch = search.trim().toLowerCase()
   const filteredItems = items.filter(item =>
     `${item.name} ${item.sku} ${item.category} ${item.warehouse}`.toLowerCase().includes(normalizedSearch)
@@ -197,10 +239,10 @@ function InventoryPanel({ items, warehouseOptions, search, addStockOpen, onOpenA
     setEditingId(item.id)
     setEditForm({ name: item.name, sku: item.sku, category: item.category, warehouse: item.warehouse, images: getInventoryImages(item) })
   }
-  const saveEdit = e => {
+  const saveEdit = async e => {
     e.preventDefault()
     const updated = { ...editForm, name: editForm.name.trim(), sku: editForm.sku.trim().toUpperCase(), category: editForm.category.trim() || 'Uncategorized' }
-    if (onUpdateItem(editingId, updated)) {
+    if (await onUpdateItem(editingId, updated)) {
       setEditingId(null)
       setEditForm(null)
     }
@@ -209,9 +251,9 @@ function InventoryPanel({ items, warehouseOptions, search, addStockOpen, onOpenA
     setEditingId(null)
     setEditForm(null)
   }
-  const submit = e => {
+  const submit = async e => {
     e.preventDefault()
-    const saved = onReceiveStock({
+    const saved = await onReceiveStock({
       name: form.name.trim(),
       sku: form.sku.trim().toUpperCase(),
       category: form.category.trim() || 'Uncategorized',
@@ -279,7 +321,7 @@ function InventoryPanel({ items, warehouseOptions, search, addStockOpen, onOpenA
   </section>
 }
 
-function OperationPanel({ title, description, records, fields, onSave, onDelete, search, addLabel = 'Add record', emptyMessage, autoOpen = false, disableAdd = false, renderActions, immutable = false }) {
+function OperationPanel({ title, description, records, fields, onSave, onDelete, search, addLabel = 'Add record', emptyMessage, autoOpen = false, disableAdd = false, renderActions, immutable = false, canDelete = true, canEditRecord = () => true, canDeleteRecord = () => true }) {
   const [formOpen, setFormOpen] = useState(autoOpen)
   const [editingId, setEditingId] = useState(null)
   const [form, setForm] = useState({})
@@ -295,7 +337,10 @@ function OperationPanel({ title, description, records, fields, onSave, onDelete,
     setFormOpen(true)
   }
   const startEdit = record => {
-    setForm(Object.fromEntries(fields.map(field => [field.key, record[field.key] ?? ''])))
+    setForm(Object.fromEntries(fields.map(field => [
+      field.key,
+      field.key === 'sku' && record.itemId ? record.itemId : record[field.key] ?? '',
+    ])))
     setEditingId(record.id)
     setFormOpen(true)
   }
@@ -305,9 +350,9 @@ function OperationPanel({ title, description, records, fields, onSave, onDelete,
     setForm({})
     setFormError('')
   }
-  const submit = e => {
+  const submit = async e => {
     e.preventDefault()
-    if (onSave({ ...form, id: editingId })) cancel()
+    if (await onSave({ ...form, id: editingId })) cancel()
   }
   const update = async e => {
     const { name, type, files, value } = e.target
@@ -353,8 +398,8 @@ function OperationPanel({ title, description, records, fields, onSave, onDelete,
             {fields.map(field => <td key={field.key}>{field.type === 'image' ? record[field.key] ? <img className="inventory-item-thumb" src={record[field.key]} alt={`${record.name || title} image`}/> : '—' : field.options?.find(option => option.value === record[field.key])?.label || record[field.key] || '—'}</td>)}
             {immutable && <td>{record.createdAt}</td>}
             <td><div className="inventory-row-actions">
-              {!immutable && <>{renderActions?.(record)}<button type="button" className="inventory-edit-button" onClick={() => startEdit(record)}><Pencil size={13}/>Edit</button></>}
-              <button type="button" className="inventory-action-cancel" onClick={() => onDelete(record.id)}>Delete</button>
+              {!immutable && <>{renderActions?.(record)}{canEditRecord(record) && <button type="button" className="inventory-edit-button" onClick={() => startEdit(record)}><Pencil size={13}/>Edit</button>}</>}
+              {canDelete && canDeleteRecord(record) && <button type="button" className="inventory-action-cancel" onClick={() => onDelete(record.id)}>Delete</button>}
             </div></td>
           </tr>)}</tbody>
         </table>
@@ -411,7 +456,7 @@ function ReportsPanel({ inventory, movements, orders, listings, bookings }) {
 }
 
 function SettingsPanel({ settings, onSave }) {
-  return <section className="operation-page"><div className="operation-heading"><div><span className="eyebrow blue-text">ACCOUNT</span><h1>Settings</h1><p>Set dashboard and inventory preferences for this browser.</p></div></div><SettingsForm settings={settings} onSave={onSave}/><div className="inventory-table-card settings-info"><h2>Data storage</h2><p>Inventory, listings, bookings, orders, messages, and settings are saved to this browser only. They are not synced to other devices.</p></div></section>
+  return <section className="operation-page"><div className="operation-heading"><div><span className="eyebrow blue-text">ACCOUNT</span><h1>Settings</h1><p>Set dashboard and inventory preferences for your account.</p></div></div><SettingsForm settings={settings} onSave={onSave}/><div className="inventory-table-card settings-info"><h2>Data storage</h2><p>Demo account and operational data are stored in this browser only.</p></div></section>
 }
 
 function DashboardOverview({ username, inventory, warehouses, listings, bookings, movements, lowStockItems, onNavigate, onQuickAction }) {
@@ -476,26 +521,120 @@ function Dashboard() {
   const [userMenuOpen, setUserMenuOpen] = useState(false)
   const [notificationsOpen, setNotificationsOpen] = useState(false)
   const [openCreateForm, setOpenCreateForm] = useState(false)
-  const [username, setUsername] = useState(() => localStorage.getItem(usernameStorageKey) || '')
-  const [profile, setProfile] = useState(() => ({
-    name: localStorage.getItem(profileStorageKeys.name) || localStorage.getItem(usernameStorageKey) || '',
-    username: localStorage.getItem(usernameStorageKey) || '',
-    email: localStorage.getItem(profileStorageKeys.email) || '',
-    phone: localStorage.getItem(profileStorageKeys.phone) || '',
-    address: localStorage.getItem(profileStorageKeys.address) || '',
-  }))
-  const [inventory, setInventory] = useState(() => {
-    return readStoredList(inventoryStorageKey)
-  })
-  const [listings, setListings] = useState(() => readStoredList(operationStorageKeys.listings))
-  const [movements, setMovements] = useState(() => readStoredList(operationStorageKeys.movements))
-  const [orders, setOrders] = useState(() => readStoredList(operationStorageKeys.orders))
-  const [bookings, setBookings] = useState(() => readStoredList(operationStorageKeys.bookings))
-  const [favorites, setFavorites] = useState(() => JSON.parse(localStorage.getItem(operationStorageKeys.favorites) || '[]'))
-  const [messages, setMessages] = useState(() => readStoredList(operationStorageKeys.messages))
-  const [warehouses, setWarehouses] = useState(() => readStoredList(operationStorageKeys.warehouses))
-  const [settings, setSettings] = useState(() => JSON.parse(localStorage.getItem(operationStorageKeys.settings) || '{"lowStockThreshold":5,"density":"comfortable","showNotifications":true}'))
+  const [loading, setLoading] = useState(true)
+  const [username, setUsername] = useState('')
+  const [userId, setUserId] = useState('')
+  const [profile, setProfile] = useState({ name: '', username: '', email: '', phone: '', address: '' })
+  const [inventory, setInventory] = useState([])
+  const [listings, setListings] = useState([])
+  const [movements, setMovements] = useState([])
+  const [orders, setOrders] = useState([])
+  const [bookings, setBookings] = useState([])
+  const [favorites, setFavorites] = useState([])
+  const [messages, setMessages] = useState([])
+  const [warehouses, setWarehouses] = useState([])
+  const [settings, setSettings] = useState({ lowStockThreshold: 5, density: 'comfortable', showNotifications: true })
   const navigate = useNavigate()
+  const loadWorkspace = async () => {
+    const resourceNames = ['profile', 'settings', 'warehouses', 'inventory', 'stock movements', 'orders', 'rental listings', 'bookings', 'favorites', 'messages']
+    const results = await Promise.allSettled([
+      apiRequest('/auth/me'),
+      apiRequest('/settings'),
+      apiRequest('/warehouses'),
+      apiRequest('/inventory'),
+      apiRequest('/stock-movements'),
+      apiRequest('/orders'),
+      apiRequest('/listings'),
+      apiRequest('/bookings'),
+      apiRequest('/favorites'),
+      apiRequest('/messages'),
+    ])
+    const valueAt = index => results[index].status === 'fulfilled' ? results[index].value : undefined
+    const user = valueAt(0)?.user
+    const userSettings = valueAt(1)
+    const warehouseData = valueAt(2)
+    const inventoryData = valueAt(3)
+    const movementData = valueAt(4)
+    const orderData = valueAt(5)
+    const listingData = valueAt(6)
+    const bookingData = valueAt(7)
+    const favoriteData = valueAt(8)
+    const messageData = valueAt(9)
+    if (user) {
+      setUserId(user.id)
+      setUsername(user.username)
+      setProfile({
+        name: user.name,
+        username: user.username,
+        email: user.email,
+        phone: user.phone || '',
+        address: user.address || '',
+      })
+    }
+    if (warehouseData) setWarehouses(warehouseData)
+    if (inventoryData) setInventory(inventoryData.map(item => ({
+      ...item,
+      warehouse: item.warehouse.name,
+      warehouseId: item.warehouse.id,
+      images: item.images.map(image => image.url),
+      updatedAt: formatRecordDate(item.updatedAt),
+    })))
+    if (movementData) setMovements(movementData.map(movement => ({
+      ...movement,
+      item: movement.itemName,
+      warehouse: movement.warehouseName,
+      type: enumLabel(movement.type),
+      createdAt: formatRecordDate(movement.createdAt),
+    })))
+    if (orderData) setOrders(orderData.map(order => ({
+      ...order,
+      itemId: order.item?.id,
+      warehouseId: order.item?.warehouseId,
+      status: enumLabel(order.status),
+    })))
+    if (listingData) setListings(listingData.map(listingFromApi))
+    if (bookingData) setBookings(bookingData.map(booking => ({
+      ...booking,
+      startDate: new Date(booking.startDate).toISOString().slice(0, 10),
+      status: bookingStatusLabel(booking.status),
+    })))
+    if (favoriteData) setFavorites(favoriteData.map(favorite => favorite.listingId))
+    if (messageData) setMessages(messageData.map(message => ({ ...message, createdAt: formatRecordDate(message.createdAt) })))
+    if (userSettings) setSettings({
+      lowStockThreshold: userSettings.lowStockThreshold,
+      density: userSettings.density.toLowerCase(),
+      showNotifications: userSettings.showNotifications,
+    })
+    const failures = results.flatMap((result, index) =>
+      result.status === 'rejected'
+        ? [{ name: resourceNames[index], error: result.reason }]
+        : []
+    )
+    const unauthorized = failures.find(failure => failure.error.status === 401)
+    if (unauthorized) throw unauthorized.error
+    if (failures.length) {
+      throw new Error(`Could not refresh ${failures.map(failure => failure.name).join(', ')}: ${failures.map(failure => failure.error.message).join('; ')}`)
+    }
+  }
+  useEffect(() => {
+    if (!getApiToken()) {
+      navigate('/login', { replace: true })
+      return
+    }
+    let active = true
+    loadWorkspace().catch(error => {
+      if (!active) return
+      if (error.status === 401) {
+        clearApiToken()
+        navigate('/login', { replace: true })
+      } else {
+        setNotice(error.message)
+      }
+    }).finally(() => {
+      if (active) setLoading(false)
+    })
+    return () => { active = false }
+  }, [])
   const toggleMenuGroup = title => {
     setExpandedGroups(current => ({ ...current, [title]: !current[title] }))
   }
@@ -504,132 +643,168 @@ function Dashboard() {
     localStorage.setItem(themeStorageKey, nextTheme)
     setTheme(nextTheme)
   }
-  const saveProfile = updatedProfile => {
-    localStorage.setItem(usernameStorageKey, updatedProfile.username)
-    localStorage.setItem(profileStorageKeys.name, updatedProfile.name)
-    localStorage.setItem(profileStorageKeys.email, updatedProfile.email)
-    localStorage.setItem(profileStorageKeys.phone, updatedProfile.phone)
-    localStorage.setItem(profileStorageKeys.address, updatedProfile.address)
-    setUsername(updatedProfile.username)
-    setProfile(updatedProfile)
-  }
-  const persistCollection = (key, setRecords, updatedRecords) => {
-    localStorage.setItem(key, JSON.stringify(updatedRecords))
-    setRecords(updatedRecords)
-  }
-  const persistInventory = updatedInventory => {
+  const runMutation = async (request, successMessage) => {
     try {
-      localStorage.setItem(inventoryStorageKey, JSON.stringify(updatedInventory))
+      await request()
     } catch (error) {
-      if (error instanceof DOMException && ['QuotaExceededError', 'NS_ERROR_DOM_QUOTA_REACHED'].includes(error.name)) {
-        setNotice('Could not save inventory because browser storage is full. Remove an image or choose a smaller one.')
-        return false
+      if (error.status === 401) {
+        clearApiToken()
+        navigate('/login', { replace: true })
       }
-      throw error
-    }
-    setInventory(updatedInventory)
-    return true
-  }
-  const saveRecord = (key, records, setRecords, record) => {
-    const updatedRecord = {
-      ...record,
-      createdAt: records.find(item => item.id === record.id)?.createdAt || record.createdAt || new Date().toISOString(),
-      updatedAt: new Date().toLocaleString(),
-    }
-    const updatedRecords = record.id
-      ? records.map(item => item.id === record.id ? updatedRecord : item)
-      : [{ ...updatedRecord, id: createId() }, ...records]
-    try {
-      localStorage.setItem(key, JSON.stringify(updatedRecords))
-    } catch (error) {
-      setNotice(`Could not save this record in browser storage: ${error.message}`)
+      setNotice(error.message)
       return false
     }
-    setRecords(updatedRecords)
-    setNotice(`${record.id ? 'Record updated' : 'Record added'} successfully.`)
+    setNotice(successMessage)
+    try {
+      await loadWorkspace()
+    } catch (error) {
+      if (error.status === 401) {
+        clearApiToken()
+        navigate('/login', { replace: true })
+      }
+      setNotice(`${successMessage} ${error.message}`)
+    }
     return true
   }
-  const deleteRecord = (key, records, setRecords, id) => {
-    persistCollection(key, setRecords, records.filter(item => item.id !== id))
-    setNotice('Record deleted.')
-  }
-  const recordMovement = movement => {
-    const newMovement = { ...movement, id: createId(), createdAt: new Date().toLocaleString() }
-    persistCollection(operationStorageKeys.movements, setMovements, [newMovement, ...movements])
-  }
-  const addStock = stock => {
-    const existingStock = inventory.find(item =>
-      item.sku.toLowerCase() === stock.sku.toLowerCase() && item.warehouse === stock.warehouse
+  const saveProfile = updatedProfile => runMutation(
+    () => apiRequest('/profile', { method: 'PUT', body: updatedProfile }),
+    'Profile details saved.'
+  )
+  const saveApiRecord = (key, record) => {
+    const resource = {
+      [operationStorageKeys.warehouses]: { path: '/warehouses', method: 'PUT' },
+      [operationStorageKeys.orders]: { path: '/orders', method: 'PATCH' },
+      [operationStorageKeys.listings]: { path: '/listings', method: 'PUT' },
+      [operationStorageKeys.bookings]: { path: '/bookings', method: 'PATCH' },
+      [operationStorageKeys.messages]: { path: '/messages', method: 'POST' },
+    }[key]
+    if (!resource) return Promise.resolve(false)
+    const item = inventory.find(entry => entry.id === record.sku || entry.sku === record.sku)
+    const listingPayload = {
+      ...record,
+      type: record.type?.toUpperCase(),
+      price: Number(record.price),
+      imageUrl: record.image || null,
+    }
+    delete listingPayload.image
+    const payloads = {
+      [operationStorageKeys.warehouses]: record,
+      [operationStorageKeys.orders]: record.id
+        ? { orderNumber: record.orderNumber, status: record.status?.toUpperCase(), quantity: Number(record.quantity), sku: item?.sku, warehouseId: item?.warehouseId }
+        : { orderNumber: record.orderNumber, sku: item?.sku, warehouseId: item?.warehouseId, quantity: Number(record.quantity), status: record.status?.toUpperCase() },
+      [operationStorageKeys.listings]: listingPayload,
+      [operationStorageKeys.bookings]: {
+        listingId: record.listingId,
+        customer: record.customer,
+        startDate: record.startDate,
+        status: record.status?.toUpperCase(),
+      },
+      [operationStorageKeys.messages]: record,
+    }
+    const path = `${resource.path}${record.id ? `/${record.id}` : ''}`
+    if (key === operationStorageKeys.orders && !item) {
+      setNotice('Choose an inventory item that belongs to a warehouse.')
+      return Promise.resolve(false)
+    }
+    if (key === operationStorageKeys.listings) payloads[key].currency ||= 'USD'
+    if (key === operationStorageKeys.warehouses) payloads[key].capacity = Number(record.capacity)
+    if (key === operationStorageKeys.bookings) payloads[key].status ||= 'REQUESTED'
+    return runMutation(
+      () => apiRequest(path, { method: record.id ? resource.method : 'POST', body: payloads[key] }),
+      `${record.id ? 'Record updated' : 'Record added'} successfully.`
     )
-    const updatedInventory = existingStock
-      ? inventory.map(item => item.id === existingStock.id
-        ? { ...item, quantity: item.quantity + stock.quantity, images: [...getInventoryImages(item), ...(stock.images || [])], updatedAt: 'Just now' }
-        : item)
-      : [{ ...stock, id: createId(), updatedAt: 'Just now' }, ...inventory]
-    if (!persistInventory(updatedInventory)) return false
-    recordMovement({ sku: stock.sku, item: stock.name, warehouse: stock.warehouse, type: 'Receive', quantity: stock.quantity })
-    setAddStockOpen(false)
-    setNotice(existingStock ? `${stock.quantity} units received for ${stock.sku}.` : `${stock.name} added to inventory.`)
-    return true
+  }
+  const deleteApiRecord = (key, id) => {
+    const paths = {
+      [operationStorageKeys.warehouses]: '/warehouses',
+      [operationStorageKeys.movements]: '/stock-movements',
+      [operationStorageKeys.orders]: '/orders',
+      [operationStorageKeys.listings]: '/listings',
+      [operationStorageKeys.bookings]: '/bookings',
+      [operationStorageKeys.messages]: '/messages',
+    }
+    const successMessage = key === operationStorageKeys.movements
+      ? 'Stock movement voided and quantity corrected.'
+      : 'Record deleted.'
+    return runMutation(() => apiRequest(`${paths[key]}/${id}`, { method: 'DELETE' }), successMessage)
+  }
+  const addStock = async stock => {
+    const warehouse = warehouses.find(item => item.name === stock.warehouse)
+    if (!warehouse) {
+      setNotice('Choose a valid warehouse before receiving stock.')
+      return false
+    }
+    const saved = await runMutation(
+      () => apiRequest('/inventory', {
+        method: 'POST',
+        body: {
+          warehouseId: warehouse.id,
+          name: stock.name,
+          sku: stock.sku,
+          category: stock.category,
+          quantity: stock.quantity,
+          images: stock.images,
+        },
+      }),
+      `${stock.name} stock received successfully.`
+    )
+    if (saved) setAddStockOpen(false)
+    return saved
   }
   const saveInventoryItem = (id, changes) => {
-    if (!changes.name || !changes.sku) {
-      setNotice('Item name and SKU are required.')
-      return false
+    const warehouse = warehouses.find(item => item.name === changes.warehouse)
+    if (!warehouse) {
+      setNotice('Choose a valid warehouse.')
+      return Promise.resolve(false)
     }
-    const duplicateSku = inventory.some(item =>
-      item.id !== id && item.warehouse === changes.warehouse && item.sku.toLowerCase() === changes.sku.toLowerCase()
+    return runMutation(
+      () => apiRequest(`/inventory/${id}`, {
+        method: 'PUT',
+        body: {
+          warehouseId: warehouse.id,
+          name: changes.name,
+          sku: changes.sku,
+          category: changes.category,
+          images: changes.images,
+        },
+      }),
+      `${changes.name} details updated.`
     )
-    if (duplicateSku) {
-      setNotice(`SKU ${changes.sku} already exists in ${changes.warehouse}.`)
-      return false
-    }
-    const updatedInventory = inventory.map(item =>
-      item.id === id ? { ...item, ...changes, updatedAt: 'Just now' } : item
-    )
-    if (!persistInventory(updatedInventory)) return false
-    setNotice(`${changes.name} details updated.`)
-    return true
   }
   const removeInventoryItem = id => {
     const item = inventory.find(entry => entry.id === id)
     if (!item) return
     setPendingConfirmation({
       title: 'Delete inventory item?',
-      message: `Delete ${item.name} and its current stock from inventory? This action cannot be undone.`,
+      message: `Remove ${item.name} from active inventory? Historical stock movements and order references will be retained.`,
       confirmLabel: 'Delete item',
-      onConfirm: () => {
-        if (persistInventory(inventory.filter(entry => entry.id !== id))) {
-          setNotice(`${item.name} deleted from inventory.`)
-        }
-      },
+      onConfirm: () => runMutation(
+        () => apiRequest(`/inventory/${id}`, { method: 'DELETE' }),
+        `${item.name} deleted from inventory.`
+      ),
     })
   }
-  const saveWarehouse = record => {
-    const name = record.name.trim()
-    if (warehouses.some(item => item.id !== record.id && item.name.toLowerCase() === name.toLowerCase())) {
-      setNotice(`A warehouse named “${name}” already exists.`)
-      return false
-    }
-    const previous = warehouses.find(item => item.id === record.id)
-    const saved = saveRecord(operationStorageKeys.warehouses, warehouses, setWarehouses, { ...record, name })
-    if (saved && previous && previous.name !== name) {
-      const updatedInventory = inventory.map(item => item.warehouse === previous.name ? { ...item, warehouse: name } : item)
-      persistCollection(inventoryStorageKey, setInventory, updatedInventory)
-    }
-    return saved
-  }
+  const saveWarehouse = record => saveApiRecord(operationStorageKeys.warehouses, {
+    ...record,
+    name: record.name.trim(),
+    capacity: Number(record.capacity),
+  })
   const adjustInventoryQuantity = (id, adjustment) => {
     const target = inventory.find(item => item.id === id)
     if (!target || target.quantity + adjustment < 0) return false
-    const updatedInventory = inventory.map(item => item.id === id
-      ? { ...item, quantity: item.quantity + adjustment, updatedAt: 'Just now' }
-      : item)
-    if (!persistInventory(updatedInventory)) return false
-    recordMovement({ sku: target.sku, item: target.name, warehouse: target.warehouse, type: adjustment < 0 ? 'Issue' : 'Receive', quantity: Math.abs(adjustment) })
-    return true
+    return runMutation(
+      () => apiRequest(`/inventory/${id}/adjust`, {
+        method: 'POST',
+        body: {
+          type: adjustment < 0 ? 'ISSUE' : 'RECEIVE',
+          quantity: Math.abs(adjustment),
+        },
+      }),
+      `${adjustment < 0 ? 'Issued' : 'Received'} ${Math.abs(adjustment)} units of ${target.name}.`
+    )
   }
   const logout = () => {
+    clearApiToken()
     localStorage.removeItem(usernameStorageKey)
     navigate('/')
   }
@@ -648,14 +823,14 @@ function Dashboard() {
     { key: 'notes', label: 'Notes', type: 'textarea', required: false },
   ]
   const movementFields = [
-    { key: 'sku', label: 'Inventory SKU', type: 'select', options: inventory.map(item => ({ value: item.sku, label: `${item.name} (${item.sku})` })) },
+    { key: 'sku', label: 'Inventory SKU', type: 'select', options: inventory.map(item => ({ value: item.id, label: `${item.name} (${item.sku}) · ${item.warehouse}` })) },
     { key: 'type', label: 'Movement type', type: 'select', options: [{ value: 'Receive', label: 'Receive stock' }, { value: 'Issue', label: 'Issue stock' }] },
     { key: 'quantity', label: 'Quantity', type: 'number', min: 1, required: true },
     { key: 'reference', label: 'Reference / reason', required: false },
   ]
   const orderFields = [
     { key: 'orderNumber', label: 'Order number', required: true },
-    { key: 'sku', label: 'Inventory SKU', type: 'select', options: inventory.map(item => ({ value: item.sku, label: `${item.name} (${item.sku})` })) },
+    { key: 'sku', label: 'Inventory SKU', type: 'select', options: inventory.map(item => ({ value: item.id, label: `${item.name} (${item.sku}) · ${item.warehouse}` })) },
     { key: 'quantity', label: 'Quantity', type: 'number', min: 1, required: true },
     { key: 'status', label: 'Status', type: 'select', options: ['Draft', 'Processing', 'Completed', 'Cancelled'].map(value => ({ value, label: value })) },
   ]
@@ -671,7 +846,7 @@ function Dashboard() {
     { key: 'listingId', label: 'Rental listing', type: 'select', options: listings.map(item => ({ value: item.id, label: item.name })) },
     { key: 'customer', label: 'Booked by', required: true },
     { key: 'startDate', label: 'Start date', type: 'date', required: true },
-    { key: 'status', label: 'Status', type: 'select', options: ['Requested', 'Confirmed', 'Cancelled'].map(value => ({ value, label: value })) },
+    { key: 'status', label: 'Status', type: 'select', options: ['Requested', 'Confirmed', 'Active', 'Completed', 'Cancelled', 'Rejected'].map(value => ({ value, label: value })) },
   ]
   const messageFields = [
     { key: 'sender', label: 'From', defaultValue: profile.name || username, required: true },
@@ -679,36 +854,45 @@ function Dashboard() {
     { key: 'message', label: 'Message', type: 'textarea', required: true },
   ]
   const toggleFavorite = id => {
-    const updated = favorites.includes(id) ? favorites.filter(item => item !== id) : [...favorites, id]
-    persistCollection(operationStorageKeys.favorites, setFavorites, updated)
+    const saved = favorites.includes(id)
+    return runMutation(
+      () => apiRequest(`/favorites/${id}`, { method: saved ? 'DELETE' : 'PUT' }),
+      saved ? 'Listing removed from favorites.' : 'Listing saved to favorites.'
+    )
   }
   const handleMovementSave = record => {
-    const item = inventory.find(entry => entry.sku === record.sku)
+    const item = inventory.find(entry => entry.id === record.sku || entry.sku === record.sku)
     const quantity = Number(record.quantity)
     if (!item || !Number.isInteger(quantity) || quantity < 1) {
       setNotice('Choose an inventory item and enter a valid quantity.')
       return false
     }
-    const adjustment = record.type === 'Issue' ? -quantity : quantity
-    if (item.quantity + adjustment < 0) {
-      setNotice(`Not enough ${item.name} in stock to issue ${quantity} units.`)
-      return false
-    }
-    const updatedInventory = inventory.map(entry => entry.id === item.id
-      ? { ...entry, quantity: entry.quantity + adjustment, updatedAt: 'Just now' }
-      : entry)
-    persistCollection(inventoryStorageKey, setInventory, updatedInventory)
-    recordMovement({ sku: item.sku, item: item.name, warehouse: item.warehouse, type: record.type, quantity, reference: record.reference })
-    setNotice(`${record.type === 'Issue' ? 'Issued' : 'Received'} ${quantity} units of ${item.name}.`)
-    return true
-  }
-  const saveListing = record => {
-    return saveRecord(operationStorageKeys.listings, listings, setListings, record)
+    return runMutation(
+      () => apiRequest('/stock-movements', {
+        method: 'POST',
+        body: {
+          warehouseId: item.warehouseId,
+          sku: item.sku,
+          type: record.type.toUpperCase(),
+          quantity,
+          reference: record.reference || undefined,
+        },
+      }),
+      `${record.type === 'Issue' ? 'Issued' : 'Received'} ${quantity} units of ${item.name}.`
+    )
   }
   const saveSettings = updated => {
-    localStorage.setItem(operationStorageKeys.settings, JSON.stringify(updated))
-    setSettings(updated)
-    setNotice('Settings saved.')
+    return runMutation(
+      () => apiRequest('/settings', {
+        method: 'PUT',
+        body: {
+          lowStockThreshold: Number(updated.lowStockThreshold),
+          density: updated.density.toUpperCase(),
+          showNotifications: updated.showNotifications,
+        },
+      }),
+      'Settings saved.'
+    )
   }
   const lowStockItems = inventory.filter(item => item.quantity <= Number(settings.lowStockThreshold))
   const lowStockAlertCount = settings.showNotifications ? lowStockItems.length : 0
@@ -717,20 +901,29 @@ function Dashboard() {
     const record = records.find(item => item.id === id)
     if (!record) return
     const recordName = record.name || record.orderNumber || record.customer || record.sku || record.sender || ''
+    const isStockMovement = key === operationStorageKeys.movements
     setPendingConfirmation({
-      title: `Delete ${recordType.toLowerCase()}?`,
-      message: `Delete ${recordName ? `“${recordName}”` : `this ${recordType.toLowerCase()}`}? This action cannot be undone.`,
-      confirmLabel: `Delete ${recordType.toLowerCase()}`,
-      onConfirm: () => deleteRecord(key, records, setRecords, id),
+      title: `${isStockMovement ? 'Void' : 'Delete'} ${recordType.toLowerCase()}?`,
+      message: isStockMovement
+        ? `Void this ${record.type.toLowerCase()} of ${record.quantity} units for ${record.item || record.sku}? An opposite stock movement will be recorded, and the original will be retained in history.`
+        : `Delete ${recordName ? `“${recordName}”` : `this ${recordType.toLowerCase()}`}? This action cannot be undone.`,
+      confirmLabel: isStockMovement ? 'Void movement' : `Delete ${recordType.toLowerCase()}`,
+      onConfirm: () => deleteApiRecord(key, id),
     })
   }
   const removeWarehouse = id => {
     const warehouse = warehouses.find(item => item.id === id)
-    if (inventory.some(item => item.warehouse === warehouse?.name)) {
+    if (!warehouse) return
+    if (inventory.some(item => item.warehouse === warehouse.name)) {
       setNotice('Move or remove this warehouse’s stock before deleting the warehouse.')
       return
     }
-    removeRecord(operationStorageKeys.warehouses, warehouses, setWarehouses, 'warehouse')(id)
+    setPendingConfirmation({
+      title: 'Delete warehouse?',
+      message: `Remove ${warehouse.name} from active warehouses? Historical inventory and stock movement records will be retained.`,
+      confirmLabel: 'Delete warehouse',
+      onConfirm: () => deleteApiRecord(operationStorageKeys.warehouses, id),
+    })
   }
   const removeListing = id => {
     if (bookings.some(booking => booking.listingId === id)) {
@@ -743,11 +936,7 @@ function Dashboard() {
       title: 'Delete rental listing?',
       message: `Delete “${listing.name}”? This action cannot be undone.`,
       confirmLabel: 'Delete listing',
-      onConfirm: () => {
-        persistCollection(operationStorageKeys.listings, setListings, listings.filter(item => item.id !== id))
-        persistCollection(operationStorageKeys.favorites, setFavorites, favorites.filter(item => item !== id))
-        setNotice('Rental listing deleted.')
-      },
+      onConfirm: () => deleteApiRecord(operationStorageKeys.listings, id),
     })
   }
   const handleQuickAction = label => {
@@ -783,7 +972,7 @@ function Dashboard() {
     setNotice(`${label} opened.`)
   }
   const operation = (title, description, records, fields, storageKey, setRecords, options = {}) =>
-    <OperationPanel key={title} title={title} description={description} records={records} fields={fields} search={query} onSave={record=>saveRecord(storageKey,records,setRecords,record)} onDelete={removeRecord(storageKey,records,setRecords,title)} {...options}/>
+    <OperationPanel key={title} title={title} description={description} records={records} fields={fields} search={query} onSave={record=>saveApiRecord(storageKey,record)} onDelete={removeRecord(storageKey,records,setRecords,title)} {...options}/>
   const searchCollections = [
     { section: 'Inventory', records: inventory, getTitle: item => item.name, getDetails: item => `${item.sku} · ${item.category} · ${item.warehouse} · ${item.quantity} units` },
     { section: 'Stock Movements', records: movements, getTitle: movement => `${movement.type} · ${movement.item || movement.sku}`, getDetails: movement => `${movement.quantity} units · ${movement.warehouse} · ${movement.reference || 'No reference'}` },
@@ -798,14 +987,14 @@ function Dashboard() {
   else if (active === 'Settings') activeContent = <SettingsPanel settings={settings} onSave={saveSettings}/>
   else if (active === 'Inventory') activeContent = <InventoryPanel items={inventory} warehouseOptions={warehouses.map(item=>item.name)} search={query} addStockOpen={addStockOpen} onOpenAddStock={() => setAddStockOpen(true)} onReceiveStock={addStock} onCloseAddStock={() => setAddStockOpen(false)} onUpdateItem={saveInventoryItem} onAdjustQuantity={adjustInventoryQuantity} onDeleteItem={removeInventoryItem} onCreateWarehouse={()=>{setActive('Warehouses');setAddStockOpen(false)}}/>
   else if (active === 'Warehouses') activeContent = operation('Warehouses', 'Create and manage the locations where your stock is stored.', warehouses, warehouseFields, operationStorageKeys.warehouses, setWarehouses, { addLabel: 'Add warehouse', autoOpen: openCreateForm, onSave: saveWarehouse, onDelete: removeWarehouse })
-  else if (active === 'Stock Movements') activeContent = operation('Stock Movements', 'Record stock receipts and issues. Each movement updates on-hand inventory.', movements, movementFields, operationStorageKeys.movements, setMovements, { addLabel: 'Record movement', autoOpen: openCreateForm, disableAdd: !inventory.length, onSave: handleMovementSave, immutable: true })
+  else if (active === 'Stock Movements') activeContent = operation('Stock Movements', 'Record stock receipts and issues. Void an incorrect movement to record a quantity correction while preserving its history.', movements, movementFields, operationStorageKeys.movements, setMovements, { addLabel: 'Record Movement', autoOpen: openCreateForm, disableAdd: !inventory.length, onSave: handleMovementSave, immutable: true })
   else if (active === 'Orders') activeContent = operation('Orders', 'Create and track warehouse orders against existing inventory items.', orders, orderFields, operationStorageKeys.orders, setOrders, { addLabel: 'Create order', autoOpen: openCreateForm, disableAdd: !inventory.length })
   else if (active === 'Barcode / RFID') activeContent = <BarcodePanel inventory={inventory} search={query} onAdjustQuantity={adjustInventoryQuantity}/>
   else if (active === 'Reports') activeContent = <ReportsPanel inventory={inventory} movements={movements} orders={orders} listings={listings} bookings={bookings}/>
-  else if (active === 'Browse Rentals') activeContent = operation('Browse Rentals', 'Add and manage rental listings available in your local workspace.', listings, listingFields, operationStorageKeys.listings, setListings, { addLabel: 'Add rental listing', autoOpen: openCreateForm, renderActions: record => <button type="button" className="inventory-action-cancel" onClick={()=>toggleFavorite(record.id)}><Heart size={13} fill={favorites.includes(record.id)?'currentColor':'none'}/>{favorites.includes(record.id)?'Saved':'Save'}</button>, onDelete: removeListing })
-  else if (active === 'My Bookings') activeContent = operation('My Bookings', 'Create and track requests for your locally saved rental listings.', bookings, bookingFields, operationStorageKeys.bookings, setBookings, { addLabel: 'Create booking', autoOpen: openCreateForm, disableAdd: !listings.length, emptyMessage: listings.length ? undefined : 'Create a rental listing before making a booking.' })
+  else if (active === 'Browse Rentals') activeContent = operation('Browse Rentals', 'Browse rental listings and manage the properties you own.', listings, listingFields, operationStorageKeys.listings, setListings, { addLabel: 'Add rental listing', autoOpen: openCreateForm, renderActions: record => <button type="button" className="inventory-action-cancel" onClick={()=>toggleFavorite(record.id)}><Heart size={13} fill={favorites.includes(record.id)?'currentColor':'none'}/>{favorites.includes(record.id)?'Saved':'Save'}</button>, canEditRecord: record => record.ownerId === userId, canDeleteRecord: record => record.ownerId === userId, onDelete: removeListing })
+  else if (active === 'My Bookings') activeContent = operation('My Bookings', 'Create and track requests for your rental listings.', bookings, bookingFields, operationStorageKeys.bookings, setBookings, { addLabel: 'Create booking', autoOpen: openCreateForm, disableAdd: !listings.length, emptyMessage: listings.length ? undefined : 'Create a rental listing before making a booking.' })
   else if (active === 'Favorites') activeContent = <FavoritesPanel listings={listings} favoriteIds={favorites} onToggleFavorite={toggleFavorite}/>
-  else if (active === 'Messages') activeContent = operation('Messages', 'Keep notes and message records for your rental conversations.', messages, messageFields, operationStorageKeys.messages, setMessages, { addLabel: 'New message', autoOpen: openCreateForm })
+  else if (active === 'Messages') activeContent = operation('Messages', 'Keep notes and message records for your rental conversations.', messages, messageFields, operationStorageKeys.messages, setMessages, { addLabel: 'New message', autoOpen: openCreateForm, immutable: true, canDeleteRecord: record => record.senderUserId === userId })
   else activeContent = <DashboardOverview username={username} inventory={inventory} warehouses={warehouses} listings={listings} bookings={bookings} movements={movements} lowStockItems={lowStockItems} onNavigate={page=>{setActive(page);setOpenCreateForm(false);setAddStockOpen(false)}} onQuickAction={handleQuickAction}/>
   return <div className={`dashboard-layout ${sidebarCollapsed ? 'sidebar-collapsed' : ''} ${settings.density === 'compact' ? 'dashboard-compact' : ''} ${theme === 'dark' ? 'theme-dark' : ''}`}>
     <aside className={`sidebar ${mobileNav ? 'sidebar-open' : ''}`}><div className="sidebar-heading"><Brand light to="/dashboard" onClick={() => {setActive('Dashboard');setQuery('');setAddStockOpen(false);setOpenCreateForm(false);setOpenSidebarGroup(null);setMobileNav(false)}}/><button type="button" className="sidebar-collapse" aria-label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'} title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'} data-tooltip={sidebarCollapsed ? 'Expand sidebar' : undefined} aria-pressed={sidebarCollapsed} onClick={() => {setSidebarCollapsed(current => !current);setOpenSidebarGroup(null)}}>{sidebarCollapsed ? <PanelLeftOpen size={17}/> : <PanelLeftClose size={17}/>}</button></div><div className="sidebar-menu">{menuGroups.map(group => {
@@ -819,7 +1008,9 @@ function Dashboard() {
     })}</div><div className="sidebar-bottom"><button className={`side-link ${active === 'Profile' ? 'side-active' : ''}`} aria-label={sidebarCollapsed ? 'Profile' : undefined} data-tooltip={sidebarCollapsed ? 'Profile' : undefined} onClick={() => {setActive('Profile');setOpenSidebarGroup(null);setOpenCreateForm(false);setMobileNav(false)}}><User size={19}/><span className="sidebar-label">Profile</span></button><button className={`side-link ${active === 'Settings' ? 'side-active' : ''}`} aria-label={sidebarCollapsed ? 'Settings' : undefined} data-tooltip={sidebarCollapsed ? 'Settings' : undefined} onClick={() => {setActive('Settings');setOpenSidebarGroup(null);setOpenCreateForm(false);setMobileNav(false)}}><Settings size={19}/><span className="sidebar-label">Settings</span></button><button type="button" className="side-link"     aria-label={sidebarCollapsed ? 'Logout' : undefined} data-tooltip={sidebarCollapsed ? 'Logout' : undefined} onClick={() => {setOpenSidebarGroup(null);requestLogout()}}><LogOut size={19}/><span className="sidebar-label">Logout</span></button><div className="sidebar-tag"><Warehouse size={42}/><strong>Smarter Operations.<br/>Better Spaces.</strong></div></div></aside>
     <main className="dashboard-main"><header className="dash-topbar"><button className="mobile-menu dash-menu" onClick={() => setMobileNav(!mobileNav)} aria-label="Toggle dashboard menu"><Menu/></button><div className="dash-search"><Search size={18}/><input placeholder="Search in this workspace..." value={query} onChange={e=>setQuery(e.target.value)}/></div><button type="button" className="theme-toggle" onClick={toggleTheme} aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`} title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`}>{theme === 'dark' ? <Sun size={18}/> : <Moon size={18}/>}<span>{theme === 'dark' ? 'Light' : 'Dark'}</span></button><div className="notification-menu"><button type="button" className="icon-button" aria-label={`${notificationCount} recent activity and messages`} aria-expanded={notificationsOpen} aria-haspopup="dialog" onClick={()=>setNotificationsOpen(current=>!current)}><Bell/>{notificationCount > 0 && <span className="notification-dot">{notificationCount > 99 ? '99+' : notificationCount}</span>}</button>{notificationsOpen && <div className="notification-popover" role="dialog" aria-label="Recent activity and messages"><section><h3>Recent Activity</h3>{movements.slice(0,4).length ? movements.slice(0,4).map(movement=><button type="button" className="notification-entry" key={movement.id} onClick={()=>{setActive('Stock Movements');setNotificationsOpen(false);setAddStockOpen(false);setOpenCreateForm(false)}}><strong>{movement.type} · {movement.item || movement.sku}</strong><span>{movement.quantity} units · {movement.warehouse}</span><small>{formatRecordDate(movement.createdAt)}</small></button>) : <p className="notification-empty">No recent stock activity.</p>}</section><section><h3>Messages</h3>{messages.slice(0,4).length ? messages.slice(0,4).map(message=><button type="button" className="notification-entry" key={message.id} onClick={()=>{setActive('Messages');setNotificationsOpen(false);setAddStockOpen(false);setOpenCreateForm(false)}}><strong>{message.sender} → {message.recipient}</strong><span>{message.message}</span><small>{formatRecordDate(message.createdAt || message.updatedAt)}</small></button>) : <p className="notification-empty">No messages yet.</p>}<button type="button" className="notification-view-all" onClick={()=>{setActive('Messages');setNotificationsOpen(false);setAddStockOpen(false);setOpenCreateForm(false)}}>Open Messages →</button></section></div>}</div><div className="user-menu"><button type="button" className="user-chip" aria-expanded={userMenuOpen} aria-haspopup="menu" onClick={() => setUserMenuOpen(!userMenuOpen)}><span>{(username || 'U').charAt(0).toUpperCase()}</span><div><strong>{username || 'User'}</strong><small>Account</small></div><ChevronDown size={15}/></button>{userMenuOpen && <div className="user-menu-dropdown" role="menu"><button type="button" role="menuitem" onClick={()=>{setActive('Profile');setOpenSidebarGroup(null);setUserMenuOpen(false)}}><User size={16}/>Profile</button>    <button type="button" role="menuitem" onClick={()=>{setOpenSidebarGroup(null);setUserMenuOpen(false);requestLogout()}}><LogOut size={16}/>Logout</button></div>}</div></header>
       {notice && <div className="notice" role="status"><CheckCircle2 size={17}/>{notice}<button aria-label="Dismiss notification" onClick={()=>setNotice('')}><X size={15}/></button></div>}
-      {query.trim()
+      {loading
+        ? <div className="inventory-empty"><Clock3 size={24}/><strong>Loading workspace data…</strong></div>
+        : query.trim()
         ? <WorkspaceSearchPanel query={query} collections={searchCollections} onSelect={section => {setActive(section);setQuery('');setAddStockOpen(false);setOpenCreateForm(false)}}/>
         : activeContent}
     </main>
@@ -843,30 +1034,34 @@ function AuthLayout({ mode }) {
   const [form, setForm] = useState({ name: '', email: '', phone: '', username: '', password: '', confirm: '', remember: true, terms: true })
   const navigate = useNavigate()
   const update = e => setForm({...form, [e.target.name]: e.target.type === 'checkbox' ? e.target.checked : e.target.value})
-  const submit = e => {
+  const submit = async e => {
     e.preventDefault()
     if (isSignup && form.password !== form.confirm) { setMessage('Passwords do not match.'); return }
-    if (isSignup) {
-      const username = form.username.trim()
-      if (!username) {
-        setMessage('Please enter a username.')
-        return
-      }
-      localStorage.setItem(usernameStorageKey, username)
-      localStorage.setItem(profileStorageKeys.name, form.name.trim())
-      localStorage.setItem(profileStorageKeys.email, form.email.trim())
-      localStorage.setItem(profileStorageKeys.phone, form.phone.trim())
-      localStorage.setItem(profileStorageKeys.address, '')
-      navigate('/dashboard')
-      return
-    }
     const username = form.username.trim()
     if (!username) {
       setMessage('Please enter your username.')
       return
     }
-    localStorage.setItem(usernameStorageKey, username)
-    navigate('/dashboard')
+    setMessage('')
+    try {
+      const data = await apiRequest(isSignup ? '/auth/register' : '/auth/login', {
+        method: 'POST',
+        body: isSignup
+          ? {
+              username,
+              name: form.name.trim(),
+              email: form.email.trim(),
+              phone: form.phone.trim(),
+              password: form.password,
+            }
+          : { username, password: form.password },
+      })
+      setApiToken(data.token)
+      localStorage.setItem(usernameStorageKey, data.user.username)
+      navigate('/dashboard')
+    } catch (error) {
+      setMessage(error.message)
+    }
   }
   return <div className="auth-page"><section className="auth-story" style={{backgroundImage:`linear-gradient(90deg,rgba(4,38,72,.96),rgba(4,38,72,.68),rgba(4,38,72,.2)),url(${warehouseImage})`}}><Brand light/><div className="story-content"><h1>{isSignup ? <>Create Your Account<br/><span>Get Started Today</span></> : <>Manage Warehouses.<br/>Rent Spaces. Grow Together.</>}</h1><p>{isSignup ? 'Join WMS Rentals and manage your warehouse and rental needs with ease. Fast. Secure. Reliable.' : 'Smart warehouse solutions for your storage and rental needs.'}</p><div className="story-benefits">{[{icon:Warehouse,title:'Warehouse Management',text:'Track inventory, manage stock, and optimize operations.'},{icon:House,title:'Rental Listings',text:'Find and list warehouse and commercial spaces for rent.'},{icon:CalendarDays,title:'Easy Bookings',text:'Manage bookings and keep your business moving.'},{icon:ShieldCheck,title:'Secure & Reliable',text:'Your data and operations are always protected.'}].map(b=><div key={b.title}><span><b.icon size={25}/></span><p><strong>{b.title}</strong><small>{b.text}</small></p></div>)}</div></div><div className="story-tagline">Build a Smarter<br/>Warehouse Future</div></section>
     <section className="auth-form-side"><div className="auth-form-wrap"><div className="auth-logo"><span className="brand-mark"><Box size={36}/></span></div><h2>{isSignup ? 'Create Account' : 'Welcome Back!'}</h2><p className="auth-subtitle">{isSignup ? 'Join WMS Rentals and start managing your warehouse and rental properties today.' : 'Sign in to your WMS Rentals account'}</p>
